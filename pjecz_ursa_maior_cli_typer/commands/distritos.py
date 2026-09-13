@@ -20,7 +20,7 @@ def consultar():
     console.print("Consultando distritos...")
     db = get_database()
     stmt = select(Distrito.clave, Distrito.nombre_corto).filter(Distrito.estatus == "A").order_by(Distrito.clave)
-    tabla = Table(title="Materias")
+    tabla = Table(title="Distritos")
     tabla.add_column("Clave", header_style="green", no_wrap=True)
     tabla.add_column("Nombre corto", header_style="green")
     for item in db.execute(stmt):

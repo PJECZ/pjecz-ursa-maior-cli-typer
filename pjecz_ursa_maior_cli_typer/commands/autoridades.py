@@ -38,7 +38,7 @@ def consultar(distrito_clave: str = "", materia_clave: str = "", offset: int = 0
             raise Exit(code=1)
         stmt = stmt.filter(Autoridad.materia_id == materia.id)
     stmt = stmt.order_by(Autoridad.clave).offset(offset).limit(limit)
-    tabla = Table(title="Materias")
+    tabla = Table(title="Autoridades")
     tabla.add_column("Clave", header_style="green", no_wrap=True)
     tabla.add_column("Descripción corta", header_style="green")
     for item in db.execute(stmt):
