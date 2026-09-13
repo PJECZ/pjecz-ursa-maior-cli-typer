@@ -1,0 +1,29 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Visual Studio Code
+.vscode/
+
+# Ruff stuff:
+.ruff_cache/
+
+# PyPI configuration file
+.pypirc
+
+# Environments
+.env
+
+# Logs
+*.log
+
+# Virtual environments
+.venv
+
+# Bash rc script
+.bashrc
+.zshrc
