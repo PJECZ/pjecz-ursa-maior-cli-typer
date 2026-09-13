@@ -5,21 +5,39 @@ Autoridades commandos
 from rich.console import Console
 from rich.table import Table
 from sqlalchemy import select
-from typer import Typer
+from typer import Exit, Typer
 
 from pjecz_ursa_maior_cli_typer.models.autoridades import Autoridad
+from pjecz_ursa_maior_cli_typer.models.distritos import Distrito
+from pjecz_ursa_maior_cli_typer.models.materias import Materia
 from pjecz_ursa_maior_cli_typer.utils.database import get_database
 
 app = Typer(help="Autoridades comandos")
 
 
 @app.command()
-def consultar():
+def consultar(distrito_clave: str = "", materia_clave: str = "", offset: int = 0, limit: int = 40):
     """Consultar autoridades"""
     console = Console()
     console.print("Consultando autoridades...")
     db = get_database()
-    stmt = select(Autoridad.clave, Autoridad.descripcion_corta).filter(Autoridad.estatus == "A").order_by(Autoridad.clave)
+    stmt = (
+        select(Autoridad.clave, Autoridad.descripcion_corta)
+        .filter(Autoridad.estatus == "A")
+    )
+    if distrito_clave != "":
+        distrito = db.execute(select(Distrito.id).filter(Distrito.clave == distrito_clave)).first()
+        if distrito is None:
+            console.print(f"[red]Distrito con clave {distrito_clave} no encontrado[/red]")
+            raise Exit(code=1)
+        stmt = stmt.filter(Autoridad.distrito_id == distrito.id)
+    if materia_clave != "":
+        materia = db.execute(select(Materia.id).filter(Materia.clave == materia_clave)).first()
+        if materia is None:
+            console.print(f"[red]Materia con clave {materia_clave} no encontrada[/red]")
+            raise Exit(code=1)
+        stmt = stmt.filter(Autoridad.materia_id == materia.id)
+    stmt = stmt.order_by(Autoridad.clave).offset(offset).limit(limit)
     tabla = Table(title="Materias")
     tabla.add_column("Clave", header_style="green", no_wrap=True)
     tabla.add_column("Descripción corta", header_style="green")
