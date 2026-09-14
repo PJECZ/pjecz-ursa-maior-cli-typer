@@ -2,10 +2,11 @@
 DGT Digitalizaciones Bitácoras modelos
 """
 
+import uuid
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import Enum, ForeignKey, String
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from pjecz_ursa_maior_cli_typer.utils.database import Base
@@ -24,10 +25,10 @@ class DgtDigitalizacionBitacora(Base):
     __tablename__ = "dgt_digitalizaciones_bitacoras"
 
     # Clave primaria
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
     # Clave foránea
-    dgt_digitalizacion_id: Mapped[int] = mapped_column(ForeignKey("dgt_digitalizaciones.id"))
+    dgt_digitalizacion_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("dgt_digitalizaciones.id"))
     dgt_digitalizacion: Mapped["DgtDigitalizacion"] = relationship(back_populates="dgt_digitalizaciones_bitacoras")
 
     # Columnas

@@ -2,7 +2,10 @@
 DGT Rutas modelos
 """
 
+import uuid
+
 from sqlalchemy import String
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from pjecz_ursa_maior_cli_typer.utils.database import Base
@@ -15,13 +18,13 @@ class DgtRuta(Base):
     __tablename__ = "dgt_rutas"
 
     # Clave primaria
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
-    # Clave foránea
+    # Claves foráneas
     dgt_deposito_id: Mapped[int] = mapped_column(ForeignKey("dgt_depositos.id"))
-    dgt_deposito: Mapped["DgtDepositos"] = relationship(back_populates="dgt_digitalizaciones")
+    dgt_deposito: Mapped["DgtDepositos"] = relationship(back_populates="dgt_rutas")
     dgt_tipo_id: Mapped[int] = mapped_column(ForeignKey("dgt_tipos.id"))
-    dgt_tipo: Mapped["DgtTipo"] = relationship(back_populates="dgt_entregas")
+    dgt_tipo: Mapped["DgtTipo"] = relationship(back_populates="dgt_rutas")
 
     # Columnas
     clave: Mapped[str] = mapped_column(String(16), unique=True)

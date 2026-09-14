@@ -2,20 +2,23 @@
 DGT Tipos modelos
 """
 
+import uuid
+
 from sqlalchemy import String
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from pjecz_ursa_maior_cli_typer.utils.database import Base
 
 
 class DgtTipo(Base):
-    """DgtTipo: Expediente, Exhorto, Amaparo, etc."""
+    """DgtTipo"""
 
     # Nombre de la tabla
     __tablename__ = "dgt_tipos"
 
     # Clave primaria
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
     # Columnas
     clave: Mapped[str] = mapped_column(String(16), unique=True)

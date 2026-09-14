@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Enum, ForeignKey, String
+from sqlalchemy import ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -20,7 +20,7 @@ class DgtDigitalizacion(Base):
     __tablename__ = "dgt_digitalizaciones"
 
     # Clave primaria
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
     # Claves foráneas
     autoridad_id: Mapped[int] = mapped_column(ForeignKey("autoridades.id"))
@@ -41,7 +41,6 @@ class DgtDigitalizacion(Base):
     expediente_anio: Mapped[Optional[int]]
     expediente_num: Mapped[Optional[int]]
     descripcion: Mapped[Optional[str]] = mapped_column(String(256))
-    identificador: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4)
 
     # Hijos
     dgt_digitalizaciones_bitacoras: Mapped[list["DgtDigitalizacionBitacora"]] = relationship(back_populates="dgt_digitalizacion")
