@@ -1,32 +1,30 @@
 """
-DGT Digitalizaciones modelos
+DGT Entregas modelos
 """
 
-import uuid
 from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import Enum, ForeignKey, String
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from pjecz_ursa_maior_cli_typer.utils.database import Base
 
 
-class DgtDigitalizacion(Base):
-    """DgtDigitalizacion"""
+class DgtEntrega(Base):
+    """DgtEntrega"""
 
     # Nombre de la tabla
-    __tablename__ = "dgt_digitalizaciones"
+    __tablename__ = "dgt_entregas"
 
     # Clave primaria
     id: Mapped[int] = mapped_column(primary_key=True)
 
     # Claves foráneas
     autoridad_id: Mapped[int] = mapped_column(ForeignKey("autoridades.id"))
-    autoridad: Mapped["Autoridad"] = relationship(back_populates="dgt_digitalizaciones")
+    autoridad: Mapped["Autoridad"] = relationship(back_populates="dgt_entregas")
     dgt_ruta_id: Mapped[int] = mapped_column(ForeignKey("dgt_rutas.id"))
-    dgt_ruta: Mapped["DgtRuta"] = relationship(back_populates="dgt_digitalizaciones")
+    dgt_ruta: Mapped["DgtRuta"] = relationship(back_populates="dgt_entregas")
 
     # Columnas con datos del archivo en el depósito
     archivo_nombre: Mapped[str] = mapped_column(String(256))
@@ -41,11 +39,10 @@ class DgtDigitalizacion(Base):
     expediente_anio: Mapped[Optional[int]]
     expediente_num: Mapped[Optional[int]]
     descripcion: Mapped[Optional[str]] = mapped_column(String(256))
-    identificador: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4)
 
     # Hijos
-    dgt_digitalizaciones_bitacoras: Mapped[list["DgtDigitalizacionBitacora"]] = relationship(back_populates="dgt_digitalizacion")
+    dgt_entregas_bitacoras: Mapped[list["DgtEntregaBitacora"]] = relationship(back_populates="dgt_entrega")
 
     def __repr__(self):
         """Representación"""
-        return f"<DgtDigitalizacion {self.id}>"
+        return f"<DgtEntrega {self.id}>"

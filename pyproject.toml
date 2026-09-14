@@ -41,5 +41,5 @@ reportUndefinedVariable = "warning"
 exclude = ["**/tests"]
 
 [tool.ruff]
-ignore = ["F821"]
+ignore = ["F821", "RUF012"]
 line-length = 128
