@@ -42,6 +42,9 @@ class Autoridad(Base):
     es_revisor_escrituras: Mapped[bool] = mapped_column(default=False)
     es_vsp_digitalizaciones: Mapped[bool] = mapped_column(default=False)
 
+    # Hijos
+    dgt_digitalizaciones: Mapped[list["DgtDigitalizacion"]] = relationship(back_populates="autoridad")
+
     def __repr__(self):
         """Representación"""
         return f"<Autoridad {self.clave}>"
