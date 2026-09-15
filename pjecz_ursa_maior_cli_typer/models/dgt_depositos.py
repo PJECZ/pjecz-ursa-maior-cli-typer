@@ -11,8 +11,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pjecz_ursa_maior_cli_typer.utils.database import Base
 
 
-class DgtDepositos(Base):
-    """DgtDepositos"""
+class DgtDeposito(Base):
+    """DgtDeposito"""
 
     # Nombre de la tabla
     __tablename__ = "dgt_depositos"
@@ -29,4 +29,4 @@ class DgtDepositos(Base):
 
     def __repr__(self):
         """Representación"""
-        return f"<DgtDepositos {self.id}>"
+        return f"<DgtDeposito {self.id}>"
