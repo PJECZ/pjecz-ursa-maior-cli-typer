@@ -44,6 +44,7 @@ class Autoridad(Base):
 
     # Hijos
     dgt_digitalizaciones: Mapped[list["DgtDigitalizacion"]] = relationship(back_populates="autoridad")
+    dgt_entregas: Mapped[list["DgtEntrega"]] = relationship(back_populates="autoridad")
 
     def __repr__(self):
         """Representación"""
