@@ -27,7 +27,8 @@ class DgtRuta(Base):
     dgt_tipo: Mapped["DgtTipo"] = relationship(back_populates="dgt_rutas")
 
     # Columnas
-    clave: Mapped[str] = mapped_column(String(16), unique=True)
+    clave: Mapped[str] = mapped_column(String(64), unique=True)
+    autoridad_clave: Mapped[str] = mapped_column(String(16))
     directorio: Mapped[str] = mapped_column(String(512))
 
     # Hijos
