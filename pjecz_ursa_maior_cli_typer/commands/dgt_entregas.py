@@ -16,6 +16,7 @@ from pjecz_ursa_maior_cli_typer.models.dgt_entregas import DgtEntrega
 from pjecz_ursa_maior_cli_typer.models.dgt_entregas_bitacoras import DgtEntregaBitacora
 from pjecz_ursa_maior_cli_typer.models.dgt_rutas import DgtRuta
 from pjecz_ursa_maior_cli_typer.utils.database import get_database
+from pjecz_ursa_maior_cli_typer.utils.digitalizaciones import parsear_num_anio_desc
 from pjecz_ursa_maior_cli_typer.utils.safe_string import safe_clave
 
 app = Typer(help="DGT Entregas comandos")
@@ -123,6 +124,7 @@ def obtener(dgt_ruta_clave: str):
 
         # A) No existe una coincidencia, crear un nuevo DgtEntrega
         if dgt_entrega is None:
+            num, anio, desc = parsear_num_anio_desc(archivo_nombre.split(".")[0])
             dgt_entrega = DgtEntrega(
                 autoridad_id=autoridad.id,
                 dgt_ruta_id=dgt_ruta.id,
@@ -132,6 +134,10 @@ def obtener(dgt_ruta_clave: str):
                 archivo_crc32c=archivo_crc32c,
                 archivo_actualizado=archivo_actualizado,
                 archivo_tamano=archivo_tamano,
+                expediente=f"{num}/{anio}" if num and anio else None,
+                expediente_anio=anio if anio else None,
+                expediente_num=num if num else None,
+                descripcion=desc if desc else None,
             )
             db.add(dgt_entrega)
             db.flush()
