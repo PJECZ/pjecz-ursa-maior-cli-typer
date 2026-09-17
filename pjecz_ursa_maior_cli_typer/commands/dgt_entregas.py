@@ -16,6 +16,7 @@ from pjecz_ursa_maior_cli_typer.models.dgt_entregas import DgtEntrega
 from pjecz_ursa_maior_cli_typer.models.dgt_entregas_bitacoras import DgtEntregaBitacora
 from pjecz_ursa_maior_cli_typer.models.dgt_rutas import DgtRuta
 from pjecz_ursa_maior_cli_typer.utils.database import get_database
+from pjecz_ursa_maior_cli_typer.utils.digitalizaciones import parsear_num_anio_desc
 from pjecz_ursa_maior_cli_typer.utils.safe_string import safe_clave
 
 app = Typer(help="DGT Entregas comandos")
@@ -81,7 +82,7 @@ def obtener(dgt_ruta_clave: str):
     console.print("Obteniendo DGT entregas...")
     db = get_database()
 
-    dgt_ruta_clave = safe_clave(dgt_ruta_clave)
+    dgt_ruta_clave = safe_clave(dgt_ruta_clave, max_len=64)
     if dgt_ruta_clave == "":
         console.print("[red]Debe indicar la clave de la DGT ruta[/red]")
         raise Exit(code=1)
@@ -123,6 +124,7 @@ def obtener(dgt_ruta_clave: str):
 
         # A) No existe una coincidencia, crear un nuevo DgtEntrega
         if dgt_entrega is None:
+            num, anio, desc = parsear_num_anio_desc(archivo_nombre.split(".")[0])
             dgt_entrega = DgtEntrega(
                 autoridad_id=autoridad.id,
                 dgt_ruta_id=dgt_ruta.id,
@@ -132,6 +134,10 @@ def obtener(dgt_ruta_clave: str):
                 archivo_crc32c=archivo_crc32c,
                 archivo_actualizado=archivo_actualizado,
                 archivo_tamano=archivo_tamano,
+                expediente=f"{num}/{anio}" if num and anio else None,
+                expediente_anio=anio if anio else None,
+                expediente_num=num if num else None,
+                descripcion=desc if desc else None,
             )
             db.add(dgt_entrega)
             db.flush()
@@ -151,12 +157,10 @@ def obtener(dgt_ruta_clave: str):
             creados += 1
             continue
 
-        # B) Ya existe y coincide el md5, crc32c, actualizado y tamaño, omitir
+        # B) Ya existe y coincide el md5 y crc32c, omitir
         if (
             dgt_entrega.archivo_md5 == archivo_md5
             and dgt_entrega.archivo_crc32c == archivo_crc32c
-            and dgt_entrega.archivo_actualizado == archivo_actualizado
-            and dgt_entrega.archivo_tamano == archivo_tamano
         ):
             omitidos += 1
             continue
@@ -164,7 +168,6 @@ def obtener(dgt_ruta_clave: str):
         # C) Hay diferencias, actualizar y agregar bitácora de MODIFICADO
         archivo_md5_old = dgt_entrega.archivo_md5
         archivo_crc32c_old = dgt_entrega.archivo_crc32c
-        dgt_entrega.archivo_nombre = archivo_nombre
         dgt_entrega.archivo_md5 = archivo_md5
         dgt_entrega.archivo_crc32c = archivo_crc32c
         dgt_entrega.archivo_actualizado = archivo_actualizado
