@@ -99,7 +99,7 @@ def obtener(dgt_ruta_clave: str):
     console.print(f"Depósito: {dgt_deposito.clave}, Directorio: {dgt_ruta.directorio}, Autoridad: {autoridad.clave}")
 
     cliente = storage.Client()
-    blobs = cliente.list_blobs(dgt_deposito.clave, prefix=dgt_ruta.directorio)
+    blobs = cliente.list_blobs(dgt_deposito.clave.lower(), prefix=dgt_ruta.directorio)
 
     archivo_urls_en_deposito = set()
     creados = modificados = omitidos = 0
@@ -107,7 +107,7 @@ def obtener(dgt_ruta_clave: str):
     for blob in blobs:
         if blob.name.endswith("/"):
             continue
-        archivo_url = f"gs://{dgt_deposito.clave}/{blob.name}"
+        archivo_url = f"gs://{dgt_deposito.clave.lower()}/{blob.name}"
         archivo_urls_en_deposito.add(archivo_url)
         archivo_nombre = blob.name.rsplit("/", maxsplit=1)[-1]
         archivo_md5 = base64.b64decode(blob.md5_hash).hex() if blob.md5_hash else ""
