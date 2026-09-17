@@ -81,7 +81,7 @@ def obtener(dgt_ruta_clave: str):
     console.print("Obteniendo DGT entregas...")
     db = get_database()
 
-    dgt_ruta_clave = safe_clave(dgt_ruta_clave)
+    dgt_ruta_clave = safe_clave(dgt_ruta_clave, max_len=64)
     if dgt_ruta_clave == "":
         console.print("[red]Debe indicar la clave de la DGT ruta[/red]")
         raise Exit(code=1)
@@ -151,12 +151,10 @@ def obtener(dgt_ruta_clave: str):
             creados += 1
             continue
 
-        # B) Ya existe y coincide el md5, crc32c, actualizado y tamaño, omitir
+        # B) Ya existe y coincide el md5 y crc32c, omitir
         if (
             dgt_entrega.archivo_md5 == archivo_md5
             and dgt_entrega.archivo_crc32c == archivo_crc32c
-            and dgt_entrega.archivo_actualizado == archivo_actualizado
-            and dgt_entrega.archivo_tamano == archivo_tamano
         ):
             omitidos += 1
             continue
@@ -164,7 +162,6 @@ def obtener(dgt_ruta_clave: str):
         # C) Hay diferencias, actualizar y agregar bitácora de MODIFICADO
         archivo_md5_old = dgt_entrega.archivo_md5
         archivo_crc32c_old = dgt_entrega.archivo_crc32c
-        dgt_entrega.archivo_nombre = archivo_nombre
         dgt_entrega.archivo_md5 = archivo_md5
         dgt_entrega.archivo_crc32c = archivo_crc32c
         dgt_entrega.archivo_actualizado = archivo_actualizado

@@ -29,14 +29,14 @@ def consultar(
     console.print("Consultando DGT rutas...")
     db = get_database()
     stmt = select(DgtRuta.clave, DgtDeposito.clave.label("dgt_deposito_clave"), DgtRuta.autoridad_clave, DgtTipo.clave.label("dgt_tipo_clave"), DgtRuta.directorio).join(DgtTipo).join(DgtDeposito)
-    dgt_deposito_clave = safe_clave(dgt_deposito_clave)
+    dgt_deposito_clave = safe_clave(dgt_deposito_clave, max_len=64)
     if dgt_deposito_clave != "":
         dgt_deposito = db.execute(select(DgtDeposito.id).filter(DgtDeposito.clave == dgt_deposito_clave)).first()
         if dgt_deposito is None:
             console.print(f"[red]DGT depósito con clave {dgt_deposito_clave} no encontrado[/red]")
             raise Exit(code=1)
         stmt = stmt.filter(DgtRuta.dgt_deposito_id == dgt_deposito.id)
-    dgt_tipo_clave = safe_clave(dgt_tipo_clave)
+    dgt_tipo_clave = safe_clave(dgt_tipo_clave, max_len=64)
     if dgt_tipo_clave != "":
         dgt_tipo = db.execute(select(DgtTipo.id).filter(DgtTipo.clave == dgt_tipo_clave)).first()
         if dgt_tipo is None:
