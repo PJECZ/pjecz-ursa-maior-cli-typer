@@ -11,6 +11,7 @@ from pjecz_ursa_maior_cli_typer.models.autoridades import Autoridad
 from pjecz_ursa_maior_cli_typer.models.distritos import Distrito
 from pjecz_ursa_maior_cli_typer.models.materias import Materia
 from pjecz_ursa_maior_cli_typer.utils.database import get_database
+from pjecz_ursa_maior_cli_typer.utils.safe_string import safe_clave
 
 app = Typer(help="Autoridades comandos")
 
@@ -25,12 +26,14 @@ def consultar(distrito_clave: str = "", materia_clave: str = "", offset: int = 0
         select(Autoridad.clave, Autoridad.descripcion_corta)
         .filter(Autoridad.estatus == "A")
     )
+    distrito_clave = safe_clave(distrito_clave)
     if distrito_clave != "":
         distrito = db.execute(select(Distrito.id).filter(Distrito.clave == distrito_clave)).first()
         if distrito is None:
             console.print(f"[red]Distrito con clave {distrito_clave} no encontrado[/red]")
             raise Exit(code=1)
         stmt = stmt.filter(Autoridad.distrito_id == distrito.id)
+    materia_clave = safe_clave(materia_clave)
     if materia_clave != "":
         materia = db.execute(select(Materia.id).filter(Materia.clave == materia_clave)).first()
         if materia is None:
