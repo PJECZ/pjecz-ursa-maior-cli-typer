@@ -75,31 +75,17 @@ def consultar(
     console.print(tabla)
 
 
-@app.command()
-def obtener(dgt_ruta_clave: str):
-    """Rastrear el depósito en Google Cloud Storage e insertar o actualizar registros en DgtEntrega"""
-    console = Console()
-    console.print("Obteniendo DGT entregas...")
-    db = get_database()
-
-    dgt_ruta_clave = safe_clave(dgt_ruta_clave, max_len=64)
-    if dgt_ruta_clave == "":
-        console.print("[red]Debe indicar la clave de la DGT ruta[/red]")
-        raise Exit(code=1)
-    renglon = db.execute(
-        select(DgtRuta, DgtDeposito, Autoridad)
-        .join(DgtDeposito)
-        .join(Autoridad, Autoridad.clave == DgtRuta.autoridad_clave)
-        .filter(DgtRuta.clave == dgt_ruta_clave)
-    ).first()
-    if renglon is None:
-        console.print(f"[red]DGT ruta con clave {dgt_ruta_clave} no encontrada[/red]")
-        raise Exit(code=1)
-    dgt_ruta, dgt_deposito, autoridad = renglon
-
+def _obtener_dgt_ruta(
+    db,
+    console: Console,
+    cliente: storage.Client,
+    dgt_ruta: DgtRuta,
+    dgt_deposito: DgtDeposito,
+    autoridad: Autoridad,
+):
+    """Rastrear el depósito en Google Cloud Storage e insertar o actualizar registros en DgtEntrega de una ruta"""
     console.print(f"Depósito: {dgt_deposito.clave}, Directorio: {dgt_ruta.directorio}, Autoridad: {autoridad.clave}")
 
-    cliente = storage.Client()
     blobs = cliente.list_blobs(dgt_deposito.clave.lower(), prefix=dgt_ruta.directorio)
 
     archivo_urls_en_deposito = set()
@@ -219,3 +205,37 @@ def obtener(dgt_ruta_clave: str):
     console.print(f"[yellow]Modificados: {modificados}[/yellow]")
     console.print(f"Omitidos: {omitidos}")
     console.print(f"[red]Eliminados: {eliminados}[/red]")
+
+
+@app.command()
+def obtener(dgt_ruta_clave: str = ""):
+    """Rastrear el depósito en Google Cloud Storage e insertar o actualizar registros en DgtEntrega
+
+    Si no se indica la clave de la DgtRuta, se procesan todas las DgtRutas con estatus "A".
+    """
+    console = Console()
+    db = get_database()
+
+    consulta = (
+        select(DgtRuta, DgtDeposito, Autoridad)
+        .join(DgtDeposito)
+        .join(Autoridad, Autoridad.clave == DgtRuta.autoridad_clave)
+    )
+
+    dgt_ruta_clave = safe_clave(dgt_ruta_clave, max_len=64)
+    if dgt_ruta_clave != "":
+        console.print(f"Obteniendo DgtEntregas de {dgt_ruta_clave}...")
+        renglones = db.execute(consulta.filter(DgtRuta.clave == dgt_ruta_clave).filter(DgtRuta.estatus == "A")).all()
+        if not renglones:
+            console.print(f"[red]DgtRuta con clave {dgt_ruta_clave} no encontrada o eliminada[/red]")
+            raise Exit(code=1)
+    else:
+        console.print("Obteniendo DgtEntregas de todas las rutas activas...")
+        renglones = db.execute(consulta.filter(DgtRuta.estatus == "A")).all()
+        if not renglones:
+            console.print("[yellow]No hay DgtRutas activas[/yellow]")
+            raise Exit(code=0)
+
+    cliente = storage.Client()
+    for dgt_ruta, dgt_deposito, autoridad in renglones:
+        _obtener_dgt_ruta(db, console, cliente, dgt_ruta, dgt_deposito, autoridad)
