@@ -21,6 +21,8 @@ from pjecz_ursa_maior_cli_typer.utils.safe_string import safe_clave
 
 app = Typer(help="DGT Entregas comandos")
 
+DGT_DEPOSITO_PROPOSITO = "ENTREGAS"
+
 
 @app.command()
 def consultar(
@@ -33,14 +35,18 @@ def consultar(
     console = Console()
     console.print("Consultando DGT entregas...")
     db = get_database()
-    stmt = select(
-        DgtEntrega.id,
-        Autoridad.clave.label("autoridad_clave"),
-        DgtRuta.clave.label("dgt_ruta_clave"),
-        DgtEntrega.archivo_nombre,
-        DgtEntrega.archivo_tamano,
-        DgtEntrega.archivo_actualizado,
-    ).join(Autoridad).join(DgtRuta)
+    stmt = (
+        select(
+            DgtEntrega.id,
+            Autoridad.clave.label("autoridad_clave"),
+            DgtRuta.clave.label("dgt_ruta_clave"),
+            DgtEntrega.archivo_nombre,
+            DgtEntrega.archivo_tamano,
+            DgtEntrega.archivo_actualizado,
+        )
+        .join(Autoridad)
+        .join(DgtRuta)
+    )
     autoridad_clave = safe_clave(autoridad_clave)
     if autoridad_clave != "":
         autoridad = db.execute(select(Autoridad.id).filter(Autoridad.clave == autoridad_clave)).first()
@@ -103,9 +109,7 @@ def _obtener_dgt_ruta(
         archivo_tamano = blob.size or 0
 
         dgt_entrega = db.execute(
-            select(DgtEntrega)
-            .filter(DgtEntrega.dgt_ruta_id == dgt_ruta.id)
-            .filter(DgtEntrega.archivo_url == archivo_url)
+            select(DgtEntrega).filter(DgtEntrega.dgt_ruta_id == dgt_ruta.id).filter(DgtEntrega.archivo_url == archivo_url)
         ).scalar_one_or_none()
 
         # A) No existe una coincidencia, crear un nuevo DgtEntrega
@@ -144,10 +148,7 @@ def _obtener_dgt_ruta(
             continue
 
         # B) Ya existe y coincide el md5 y crc32c, omitir
-        if (
-            dgt_entrega.archivo_md5 == archivo_md5
-            and dgt_entrega.archivo_crc32c == archivo_crc32c
-        ):
+        if dgt_entrega.archivo_md5 == archivo_md5 and dgt_entrega.archivo_crc32c == archivo_crc32c:
             omitidos += 1
             continue
 
@@ -209,9 +210,9 @@ def _obtener_dgt_ruta(
 
 @app.command()
 def obtener(dgt_ruta_clave: str = ""):
-    """Rastrear el depósito en Google Cloud Storage e insertar o actualizar registros en DgtEntrega
+    """Insertar o actualizar registros en DgtEntrega rastreando el depósito
 
-    Si no se indica la clave de la DgtRuta, se procesan todas las DgtRutas con estatus "A".
+    Si no se indica la clave de la DgtRuta, se procesan todas las DgtRutas con propósito ENTREGAS y estatus "A".
     """
     console = Console()
     db = get_database()
@@ -220,18 +221,21 @@ def obtener(dgt_ruta_clave: str = ""):
         select(DgtRuta, DgtDeposito, Autoridad)
         .join(DgtDeposito)
         .join(Autoridad, Autoridad.clave == DgtRuta.autoridad_clave)
+        .where(DgtDeposito.proposito == DGT_DEPOSITO_PROPOSITO)
     )
 
     dgt_ruta_clave = safe_clave(dgt_ruta_clave, max_len=64)
     if dgt_ruta_clave != "":
         console.print(f"Obteniendo DgtEntregas de {dgt_ruta_clave}...")
-        renglones = db.execute(consulta.filter(DgtRuta.clave == dgt_ruta_clave).filter(DgtRuta.estatus == "A")).all()
+        consulta = consulta.where(DgtRuta.clave == dgt_ruta_clave).where(DgtRuta.estatus == "A")
+        renglones = db.execute(consulta).all()
         if not renglones:
             console.print(f"[red]DgtRuta con clave {dgt_ruta_clave} no encontrada o eliminada[/red]")
             raise Exit(code=1)
     else:
         console.print("Obteniendo DgtEntregas de todas las rutas activas...")
-        renglones = db.execute(consulta.filter(DgtRuta.estatus == "A")).all()
+        consulta = consulta.where(DgtRuta.estatus == "A")
+        renglones = db.execute(consulta).all()
         if not renglones:
             console.print("[yellow]No hay DgtRutas activas[/yellow]")
             raise Exit(code=0)
