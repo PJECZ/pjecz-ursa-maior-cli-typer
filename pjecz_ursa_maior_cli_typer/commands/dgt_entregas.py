@@ -31,9 +31,9 @@ def consultar(
     offset: int = 0,
     limit: int = 40,
 ):
-    """Consultar DGT entregas"""
+    """Consultar DgtEntrega"""
     console = Console()
-    console.print("Consultando DGT entregas...")
+    console.print("Consultando DgtEntrega...")
     db = get_database()
     stmt = (
         select(
@@ -89,13 +89,13 @@ def _obtener_dgt_ruta(
     dgt_deposito: DgtDeposito,
     autoridad: Autoridad,
 ):
-    """Rastrear el depósito en Google Cloud Storage e insertar o actualizar registros en DgtEntrega de una ruta"""
+    """Rastrear el depósito e insertar o actualizar registros en DgtEntrega de una ruta"""
     console.print(f"Depósito: {dgt_deposito.clave}, Directorio: {dgt_ruta.directorio}, Autoridad: {autoridad.clave}")
 
     blobs = cliente.list_blobs(dgt_deposito.clave.lower(), prefix=dgt_ruta.directorio)
 
     archivo_urls_en_deposito = set()
-    creados = modificados = omitidos = 0
+    creados = modificados = omitidos = eliminados = 0
 
     for blob in blobs:
         if blob.name.endswith("/"):
@@ -108,9 +108,12 @@ def _obtener_dgt_ruta(
         archivo_actualizado = blob.updated
         archivo_tamano = blob.size or 0
 
-        dgt_entrega = db.execute(
-            select(DgtEntrega).filter(DgtEntrega.dgt_ruta_id == dgt_ruta.id).filter(DgtEntrega.archivo_url == archivo_url)
-        ).scalar_one_or_none()
+        consulta = (
+            select(DgtEntrega)
+            .filter(DgtEntrega.dgt_ruta_id == dgt_ruta.id)
+            .filter(DgtEntrega.archivo_url == archivo_url)
+        )
+        dgt_entrega = db.execute(consulta).scalar_one_or_none()
 
         # A) No existe una coincidencia, crear un nuevo DgtEntrega
         if dgt_entrega is None:
@@ -202,10 +205,14 @@ def _obtener_dgt_ruta(
 
     db.commit()
 
-    console.print(f"[green]Creados: {creados}[/green]")
-    console.print(f"[yellow]Modificados: {modificados}[/yellow]")
-    console.print(f"Omitidos: {omitidos}")
-    console.print(f"[red]Eliminados: {eliminados}[/red]")
+    if creados > 0:
+        console.print(f"Creados: [green]{creados}[/green]")
+    if modificados > 0:
+        console.print(f"Modificados: [yellow]{modificados}[/yellow]")
+    if omitidos > 0:
+        console.print(f"Omitidos: [gray]{omitidos}[/gray]")
+    if eliminados > 0:
+        console.print(f"Eliminados: [red]{eliminados}[/red]")
 
 
 @app.command()
