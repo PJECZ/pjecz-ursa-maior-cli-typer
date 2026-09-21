@@ -90,16 +90,21 @@ def _obtener_dgt_ruta(
     autoridad: Autoridad,
 ):
     """Rastrear el depósito e insertar o actualizar registros en DgtEntrega de una ruta"""
-    console.print(f"Depósito: {dgt_deposito.clave}, Directorio: {dgt_ruta.directorio}, Autoridad: {autoridad.clave}")
+    console.print(f"Depósito: {dgt_deposito.clave.lower()}, Directorio: {dgt_ruta.directorio}, Autoridad: {autoridad.clave}")
 
+    # Obtener los recursos en el depósito, en el directorio
     blobs = cliente.list_blobs(dgt_deposito.clave.lower(), prefix=dgt_ruta.directorio)
 
+    # Inicializar variables
     archivo_urls_en_deposito = set()
     creados = modificados = omitidos = eliminados = 0
 
+    # Bucle por cada recurso en el depósito
     for blob in blobs:
         if blob.name.endswith("/"):
             continue
+
+        # Obtener información del recurso
         archivo_url = f"gs://{dgt_deposito.clave.lower()}/{blob.name}"
         archivo_urls_en_deposito.add(archivo_url)
         archivo_nombre = blob.name.rsplit("/", maxsplit=1)[-1]
@@ -108,6 +113,7 @@ def _obtener_dgt_ruta(
         archivo_actualizado = blob.updated
         archivo_tamano = blob.size or 0
 
+        # Buscar en la base de datos si se tiene ese registro
         consulta = (
             select(DgtEntrega)
             .filter(DgtEntrega.dgt_ruta_id == dgt_ruta.id)
@@ -178,7 +184,7 @@ def _obtener_dgt_ruta(
         )
         modificados += 1
 
-    # D) DgtEntrega que ya no están en el depósito, dar de baja y agregar bitácora de ELIMINADO
+    # D) No están en el depósito, dar de baja y agregar bitácora de ELIMINADO
     eliminados = 0
     dgt_entregas_previas = db.execute(
         select(DgtEntrega).filter(DgtEntrega.dgt_ruta_id == dgt_ruta.id).filter(DgtEntrega.estatus == "A")

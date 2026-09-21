@@ -27,3 +27,7 @@ wheels/
 # Bash rc script
 .bashrc
 .zshrc
+
+# Export files
+*.csv
+*.xlsx
