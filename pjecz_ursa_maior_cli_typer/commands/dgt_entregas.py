@@ -90,7 +90,7 @@ def _obtener_dgt_ruta(
     autoridad: Autoridad,
 ):
     """Rastrear el depósito e insertar o actualizar registros en DgtEntrega de una ruta"""
-    console.print(f"Depósito: {dgt_deposito.clave}, Directorio: {dgt_ruta.directorio}, Autoridad: {autoridad.clave}")
+    console.print(f"Depósito: {dgt_deposito.clave.lower()}, Directorio: {dgt_ruta.directorio}, Autoridad: {autoridad.clave}")
 
     # Obtener los recursos en el depósito, en el directorio
     blobs = cliente.list_blobs(dgt_deposito.clave.lower(), prefix=dgt_ruta.directorio)

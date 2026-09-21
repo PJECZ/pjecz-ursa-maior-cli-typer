@@ -94,7 +94,7 @@ def _obtener_dgt_ruta(
     autoridad: Autoridad,
 ):
     """Rastrear el depósito e insertar o actualizar registros en DgtDigitalizaciones de una ruta"""
-    console.print(f"Depósito: {dgt_deposito.clave}, Directorio: {dgt_ruta.directorio}, Autoridad: {autoridad.clave}")
+    console.print(f"Depósito: {dgt_deposito.clave.lower()}, Directorio: {dgt_ruta.directorio}, Autoridad: {autoridad.clave}")
 
     # Leer el archivo CSV
     ruta = Path(VSP_DIGITALIZACIONES_CSV)
@@ -141,7 +141,7 @@ def _obtener_dgt_ruta(
         archivo_tamano = blob.size or 0
 
         # Obtener el UUID a partir del nombre
-        uuid_str = archivo_nombre.rsplit(".", maxsplit=1)[-1]
+        uuid_str = archivo_nombre.rsplit(".", maxsplit=1)[0]
         if es_uuid_valido(uuid_str) is False:
             # Se encontró un archivo con UUID inválido
             invalidos += 1
