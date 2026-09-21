@@ -4,6 +4,16 @@ Digitalizaciones
 
 import re
 from datetime import date
+from uuid import UUID
+
+
+def es_uuid_valido(valor: str) -> bool:
+    """Validar si un string contiene un UUID"""
+    try:
+        UUID(valor)
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
 
 
 def parsear_num_anio_desc(texto: str) -> tuple[int, int, str]:
