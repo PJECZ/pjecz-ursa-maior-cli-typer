@@ -14,6 +14,7 @@ from pjecz_ursa_maior_cli_typer.commands.dgt_rutas import app as dgt_rutas_app
 from pjecz_ursa_maior_cli_typer.commands.dgt_tipos import app as dgt_tipos_app
 from pjecz_ursa_maior_cli_typer.commands.distritos import app as distritos_app
 from pjecz_ursa_maior_cli_typer.commands.materias import app as materias_app
+from pjecz_ursa_maior_cli_typer.commands.vsp_digitalizaciones import app as vsp_digitalizaciones_app
 
 app = Typer(help="PJECZ Ursa Maior CLI Typer")
 app.add_typer(autoridades_app, name="autoridades")
@@ -26,6 +27,7 @@ app.add_typer(dgt_rutas_app, name="dgt-rutas")
 app.add_typer(dgt_tipos_app, name="dgt-tipos")
 app.add_typer(distritos_app, name="distritos")
 app.add_typer(materias_app, name="materias")
+app.add_typer(vsp_digitalizaciones_app, name="vsp-digitalizaciones")
 
 if __name__ == "__main__":
     app()
