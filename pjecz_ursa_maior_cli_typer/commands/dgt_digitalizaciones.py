@@ -20,7 +20,7 @@ from pjecz_ursa_maior_cli_typer.models.dgt_digitalizaciones import DgtDigitaliza
 from pjecz_ursa_maior_cli_typer.models.dgt_digitalizaciones_bitacoras import DgtDigitalizacionBitacora
 from pjecz_ursa_maior_cli_typer.models.dgt_rutas import DgtRuta
 from pjecz_ursa_maior_cli_typer.utils.database import get_database
-from pjecz_ursa_maior_cli_typer.utils.digitalizaciones import es_uuid_valido, parsear_num_anio_desc
+from pjecz_ursa_maior_cli_typer.utils.digitalizaciones import es_uuid_valido
 from pjecz_ursa_maior_cli_typer.utils.safe_string import safe_clave
 
 app = Typer(help="DGT Digitalizaciones comandos")
@@ -65,7 +65,7 @@ def consultar(
             console.print(f"[red]DGT ruta con clave {dgt_ruta_clave} no encontrada[/red]")
             raise Exit(code=1)
         stmt = stmt.filter(DgtDigitalizacion.dgt_ruta_id == dgt_ruta.id)
-        stmt = stmt.order_by(DgtDigitalizacion.archivo_actualizado.desc()).offset(offset).limit(limit)
+    stmt = stmt.order_by(DgtDigitalizacion.archivo_actualizado.desc()).offset(offset).limit(limit)
     tabla = Table(title="DGT Entregas")
     tabla.add_column("ID", header_style="green", no_wrap=True)
     tabla.add_column("Autoridad", header_style="green", no_wrap=True)
