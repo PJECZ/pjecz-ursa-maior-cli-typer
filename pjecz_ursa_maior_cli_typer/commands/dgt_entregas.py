@@ -137,6 +137,8 @@ def _obtener_dgt_ruta(
                 expediente_anio=anio if anio else None,
                 expediente_num=num if num else None,
                 descripcion=desc if desc else None,
+                ultimo_evento="CREADO",
+                ultimo_evento_creado=archivo_actualizado,
             )
             db.add(dgt_entrega)
             db.flush()
