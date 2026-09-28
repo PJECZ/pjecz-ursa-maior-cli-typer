@@ -19,7 +19,12 @@ def consultar(offset: int = 0, limit: int = 40):
     console = Console()
     console.print("Consultando DGT depósitos...")
     db = get_database()
-    stmt = select(DgtDeposito.clave, DgtDeposito.descripcion, DgtDeposito.proposito).order_by(DgtDeposito.clave).offset(offset).limit(limit)
+    stmt = (
+        select(DgtDeposito.clave, DgtDeposito.descripcion, DgtDeposito.proposito)
+        .order_by(DgtDeposito.clave)
+        .offset(offset)
+        .limit(limit)
+    )
     tabla = Table(title="DGT Depósitos")
     tabla.add_column("Clave", header_style="green", no_wrap=True)
     tabla.add_column("Descripción", header_style="green")

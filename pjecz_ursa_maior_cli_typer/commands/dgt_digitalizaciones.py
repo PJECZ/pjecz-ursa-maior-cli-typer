@@ -3,9 +3,6 @@ DGT Digitalizaciones commandos
 """
 
 import base64
-import csv
-import sys
-from pathlib import Path
 from uuid import UUID
 
 from google.cloud import storage
@@ -19,6 +16,7 @@ from pjecz_ursa_maior_cli_typer.models.dgt_depositos import DgtDeposito
 from pjecz_ursa_maior_cli_typer.models.dgt_digitalizaciones import DgtDigitalizacion
 from pjecz_ursa_maior_cli_typer.models.dgt_digitalizaciones_bitacoras import DgtDigitalizacionBitacora
 from pjecz_ursa_maior_cli_typer.models.dgt_rutas import DgtRuta
+from pjecz_ursa_maior_cli_typer.models.vsp_digitalizaciones import VspDigitalizacion
 from pjecz_ursa_maior_cli_typer.utils.database import get_database
 from pjecz_ursa_maior_cli_typer.utils.digitalizaciones import es_uuid_valido
 from pjecz_ursa_maior_cli_typer.utils.safe_string import safe_clave
@@ -26,7 +24,6 @@ from pjecz_ursa_maior_cli_typer.utils.safe_string import safe_clave
 app = Typer(help="DGT Digitalizaciones comandos")
 
 DGT_DEPOSITO_PROPOSITO = "DIGITALIZACIONES"
-VSP_DIGITALIZACIONES_CSV = "exports/vsp_digitalizaciones.csv"
 
 @app.command()
 def consultar(
@@ -53,20 +50,20 @@ def consultar(
     )
     autoridad_clave = safe_clave(autoridad_clave)
     if autoridad_clave != "":
-        autoridad = db.execute(select(Autoridad.id).filter(Autoridad.clave == autoridad_clave)).first()
+        autoridad = db.execute(select(Autoridad.id).where(Autoridad.clave == autoridad_clave)).first()
         if autoridad is None:
             console.print(f"[red]Autoridad con clave {autoridad_clave} no encontrada[/red]")
             raise Exit(code=1)
-        stmt = stmt.filter(DgtDigitalizacion.autoridad_id == autoridad.id)
+        stmt = stmt.where(DgtDigitalizacion.autoridad_id == autoridad.id)
     dgt_ruta_clave = safe_clave(dgt_ruta_clave)
     if dgt_ruta_clave != "":
-        dgt_ruta = db.execute(select(DgtRuta.id).filter(DgtRuta.clave == dgt_ruta_clave)).first()
+        dgt_ruta = db.execute(select(DgtRuta.id).where(DgtRuta.clave == dgt_ruta_clave)).first()
         if dgt_ruta is None:
             console.print(f"[red]DGT ruta con clave {dgt_ruta_clave} no encontrada[/red]")
             raise Exit(code=1)
-        stmt = stmt.filter(DgtDigitalizacion.dgt_ruta_id == dgt_ruta.id)
+        stmt = stmt.where(DgtDigitalizacion.dgt_ruta_id == dgt_ruta.id)
     stmt = stmt.order_by(DgtDigitalizacion.archivo_actualizado.desc()).offset(offset).limit(limit)
-    tabla = Table(title="DGT Entregas")
+    tabla = Table(title="DGT Digitalizaciones")
     tabla.add_column("ID", header_style="green", no_wrap=True)
     tabla.add_column("Autoridad", header_style="green", no_wrap=True)
     tabla.add_column("Ruta", header_style="green", no_wrap=True)
@@ -96,29 +93,6 @@ def _obtener_dgt_ruta(
     """Rastrear el depósito e insertar o actualizar registros en DgtDigitalizaciones de una ruta"""
     console.print(f"Depósito: {dgt_deposito.clave.lower()}, Directorio: {dgt_ruta.directorio}, Autoridad: {autoridad.clave}")
 
-    # Leer el archivo CSV
-    ruta = Path(VSP_DIGITALIZACIONES_CSV)
-    if not ruta.exists():
-        console.print(f"[red]ERROR: {ruta.name} no se encontró.")
-        sys.exit(1)
-    if not ruta.is_file():
-        console.print(f"[red]ERROR: {ruta.name} no es un archivo.")
-        sys.exit(1)
-    vsp_digitalizaciones_registros = []
-    with open(ruta, encoding="utf8") as puntero:
-        rows = csv.DictReader(puntero)
-        for row in rows:
-            vsp_digitalizaciones_registros.append({
-                "uuid": row["UUID"],
-                "autoridad_clave": row["AUTORIDAD_CLAVE"],
-                "expediente": row["EXPEDIENTE"],
-                "expediente_anio": row["EXPEDIENTE_ANIO"],
-                "expediente_num": row["EXPEDIENTE_NUM"],
-                "descripcion": row["DESCRIPCION"],
-                "url": row["URL"],
-            })
-    vsp_digitalizaciones_indice = {reg["uuid"]: reg for reg in vsp_digitalizaciones_registros}
-
     # Obtener los recursos en el depósito, en el directorio
     blobs = cliente.list_blobs(dgt_deposito.clave.lower(), prefix=dgt_ruta.directorio)
 
@@ -141,60 +115,64 @@ def _obtener_dgt_ruta(
         archivo_tamano = blob.size or 0
 
         # Obtener el UUID a partir del nombre
-        uuid_str = archivo_nombre.rsplit(".", maxsplit=1)[0]
-        if es_uuid_valido(uuid_str) is False:
+        archivo_uuid_str = archivo_nombre.rsplit(".", maxsplit=1)[0]
+        if es_uuid_valido(archivo_uuid_str) is False:
             # Se encontró un archivo con UUID inválido
             invalidos += 1
             continue
+        archivo_uuid = UUID(archivo_uuid_str)
 
-        # Consultar en la base de datos si ya se tiene ese UUID
-        consulta = (
+        # Consultar en dgt_digitalizaciones
+        dgt_digitalizacion = db.execute(
             select(DgtDigitalizacion)
-            .filter(DgtDigitalizacion.id == UUID(uuid_str))
-        )
-        dgt_digitalizacion = db.execute(consulta).scalar_one_or_none()
+            .where(DgtDigitalizacion.id == archivo_uuid)
+        ).scalar_one_or_none()
 
-        # A) No existe una coincidencia
+        # A) No existe un registro en dgt_digitalizaciones
         if dgt_digitalizacion is None:
-            # Buscar en el CSV
-            datos = vsp_digitalizaciones_indice.get(uuid_str)
-            if datos:
-                # Insertar un nuevo DgtDigitalizacion
-                dgt_digitalizacion = DgtDigitalizacion(
-                    autoridad_id = autoridad.id,
-                    dgt_ruta_id=dgt_ruta.id,
-                    archivo_nombre=archivo_nombre,
-                    archivo_url=archivo_url,
-                    archivo_md5=archivo_md5,
-                    archivo_crc32c=archivo_crc32c,
-                    archivo_actualizado=archivo_actualizado,
-                    archivo_tamano=archivo_tamano,
-                    expediente=datos["expediente"],
-                    expediente_anio=datos["expediente_anio"],
-                    expediente_num=datos["expediente_num"],
-                    descripcion=datos["descripcion"],
-                )
-                db.add(dgt_digitalizacion)
-                db.flush()
-                db.add(
-                    DgtDigitalizacionBitacora(
-                        dgt_digitalizacion_id=dgt_digitalizacion.id,
-                        archivo_url=archivo_url,
-                        archivo_md5_old="",
-                        archivo_md5_new=archivo_md5,
-                        archivo_crc32c_old="",
-                        archivo_crc32c_new=archivo_crc32c,
-                        archivo_actualizado=archivo_actualizado,
-                        archivo_tamano=archivo_tamano,
-                        evento="CREADO",
-                    )
-                )
-                creados += 1
-                continue
-            else:
-                # Se tiene un archivo que SÍ está en la base de datos pero NO se encuentra en el CSV
+            vsp_digitalizacion = db.execute(
+                select(VspDigitalizacion)
+                .where(VspDigitalizacion.archivo_uuid == archivo_uuid)
+            ).scalar_one_or_none()
+
+            # Si NO se encontró en vsp_digitalizaciones es un 'polizón'
+            if vsp_digitalizacion is None:
                 polizones += 1
                 continue
+
+            # Insertar un nuevo DgtDigitalizacion
+            dgt_digitalizacion = DgtDigitalizacion(
+                id=archivo_uuid,
+                autoridad_id = autoridad.id,
+                dgt_ruta_id=dgt_ruta.id,
+                archivo_nombre=archivo_nombre,
+                archivo_url=archivo_url,
+                archivo_md5=archivo_md5,
+                archivo_crc32c=archivo_crc32c,
+                archivo_actualizado=archivo_actualizado,
+                archivo_tamano=archivo_tamano,
+                expediente=vsp_digitalizacion.expediente,
+                expediente_anio=vsp_digitalizacion.expediente_anio,
+                expediente_num=vsp_digitalizacion.expediente_num,
+                descripcion=vsp_digitalizacion.descripcion,
+            )
+            db.add(dgt_digitalizacion)
+            db.flush()
+            db.add(
+                DgtDigitalizacionBitacora(
+                    dgt_digitalizacion_id=dgt_digitalizacion.id,
+                    archivo_url=archivo_url,
+                    archivo_md5_old="",
+                    archivo_md5_new=archivo_md5,
+                    archivo_crc32c_old="",
+                    archivo_crc32c_new=archivo_crc32c,
+                    archivo_actualizado=archivo_actualizado,
+                    archivo_tamano=archivo_tamano,
+                    evento="CREADO",
+                )
+            )
+            creados += 1
+            continue
 
         # B) Ya existe y coincide el md5 y crc32c, omitir
         if dgt_digitalizacion.archivo_md5 == archivo_md5 and dgt_digitalizacion.archivo_crc32c == archivo_crc32c:
@@ -227,7 +205,9 @@ def _obtener_dgt_ruta(
     # D) No están en el depósito, dar de baja y agregar bitácora de ELIMINADO
     eliminados = 0
     dgt_digitalizaciones_previas = db.execute(
-        select(DgtDigitalizacion).filter(DgtDigitalizacion.dgt_ruta_id == dgt_ruta.id).filter(DgtDigitalizacion.estatus == "A")
+        select(DgtDigitalizacion)
+        .where(DgtDigitalizacion.dgt_ruta_id == dgt_ruta.id)
+        .where(DgtDigitalizacion.estatus == "A")
     ).scalars()
     for dgt_digitalizacion in dgt_digitalizaciones_previas:
         if dgt_digitalizacion.archivo_url in archivo_urls_en_deposito:
@@ -262,7 +242,7 @@ def _obtener_dgt_ruta(
     if invalidos > 0:
         console.print(f"Archivos cuyo nombre no es un UUID: [red]{invalidos}[/red]")
     if polizones > 0:
-        console.print(f"Archivos que NO están en el CSV: [red]{polizones}[/red]")
+        console.print(f"Archivos están en el depósito pero NO en la BD: [red]{polizones}[/red]")
 
 
 @app.command()
