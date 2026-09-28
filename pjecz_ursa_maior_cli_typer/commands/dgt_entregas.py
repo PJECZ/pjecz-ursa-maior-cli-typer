@@ -170,6 +170,8 @@ def _obtener_dgt_ruta(
         dgt_entrega.archivo_crc32c = archivo_crc32c
         dgt_entrega.archivo_actualizado = archivo_actualizado
         dgt_entrega.archivo_tamano = archivo_tamano
+        dgt_entrega.ultimo_evento = "MODIFICADO"
+        dgt_entrega.ultimo_evento_creado = archivo_actualizado
         db.add(dgt_entrega)
         db.add(
             DgtEntregaBitacora(
@@ -196,6 +198,7 @@ def _obtener_dgt_ruta(
     for dgt_entrega in dgt_entregas_previas:
         if dgt_entrega.archivo_url in archivo_urls_en_deposito:
             continue
+        dgt_entrega.ultimo_evento = "ELIMINADO"
         dgt_entrega.estatus = "B"
         db.add(dgt_entrega)
         db.add(
@@ -243,14 +246,14 @@ def obtener(dgt_ruta_clave: str = ""):
 
     dgt_ruta_clave = safe_clave(dgt_ruta_clave, max_len=64)
     if dgt_ruta_clave != "":
-        console.print(f"Obteniendo DgtEntregas de {dgt_ruta_clave}...")
+        console.print(f"Obteniendo entregas de {dgt_ruta_clave}...")
         consulta = consulta.where(DgtRuta.clave == dgt_ruta_clave).where(DgtRuta.estatus == "A")
         renglones = db.execute(consulta).all()
         if not renglones:
             console.print(f"[red]DgtRuta con clave {dgt_ruta_clave} no encontrada o eliminada[/red]")
             raise Exit(code=1)
     else:
-        console.print("Obteniendo DgtEntregas de todas las rutas activas...")
+        console.print("Obteniendo entregas de todas las rutas activas...")
         consulta = consulta.where(DgtRuta.estatus == "A")
         renglones = db.execute(consulta).all()
         if not renglones:

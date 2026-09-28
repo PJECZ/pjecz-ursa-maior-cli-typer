@@ -15,6 +15,7 @@ from pjecz_ursa_maior_cli_typer.models.autoridades import Autoridad
 from pjecz_ursa_maior_cli_typer.models.dgt_depositos import DgtDeposito
 from pjecz_ursa_maior_cli_typer.models.dgt_digitalizaciones import DgtDigitalizacion
 from pjecz_ursa_maior_cli_typer.models.dgt_digitalizaciones_bitacoras import DgtDigitalizacionBitacora
+from pjecz_ursa_maior_cli_typer.models.dgt_entregas import DgtEntrega
 from pjecz_ursa_maior_cli_typer.models.dgt_rutas import DgtRuta
 from pjecz_ursa_maior_cli_typer.models.vsp_digitalizaciones import VspDigitalizacion
 from pjecz_ursa_maior_cli_typer.utils.database import get_database
@@ -130,18 +131,54 @@ def _obtener_dgt_ruta(
 
         # A) No existe un registro en dgt_digitalizaciones
         if dgt_digitalizacion is None:
-            vsp_digitalizacion = db.execute(
-                select(VspDigitalizacion)
-                .where(VspDigitalizacion.archivo_uuid == archivo_uuid)
+            expediente = ""
+            expediente_anio = 0
+            expediente_num = 0
+            descripcion = ""
+            ultimo_evento = ""
+
+            # Buscar en dgt_entregas
+            dgt_entrega = db.execute(
+                select(DgtEntrega)
+                .where(DgtEntrega.archivo_uuid == archivo_uuid)
             ).scalar_one_or_none()
 
-            # Si NO se encontró en vsp_digitalizaciones es un 'polizón'
-            if vsp_digitalizacion is None:
-                polizones += 1
-                continue
+            # Si se encontró en dgt_entregas
+            if dgt_entrega:
+                expediente = dgt_entrega.expediente
+                expediente_anio = dgt_entrega.expediente_anio
+                expediente_num = dgt_entrega.expediente_num
+                descripcion = dgt_entrega.expediente.descripcion
+                ultimo_evento = dgt_entrega.ultimo_evento
+            else:  # NO se encontró en dgt_entregas, luego buscar en vsp_digitalizaciones
+                vsp_digitalizacion = db.execute(
+                    select(VspDigitalizacion)
+                    .where(VspDigitalizacion.archivo_uuid == archivo_uuid)
+                ).scalar_one_or_none()
+                if vsp_digitalizacion:
+                    expediente = vsp_digitalizacion.expediente
+                    expediente_anio = vsp_digitalizacion.expediente_anio
+                    expediente_num = vsp_digitalizacion.expediente_num
+                    descripcion = vsp_digitalizacion.descripcion
+                    ultimo_evento = "CREADO"
+                else:  # No se encontró en ninguno de los dos, entonces este archivo es un polizón
+                    polizones += 1
+                    continue
 
-            # Insertar un nuevo DgtDigitalizacion
-            dgt_digitalizacion = DgtDigitalizacion(
+            # Si su último evento es ELIMINADO
+            if ultimo_evento == "ELIMINADO":
+                eliminados += 1
+
+            # Si su último evento es MODIFICADO
+            if ultimo_evento == "MODIFICADO":
+                modificados += 1
+
+            # Si su último evento es CREADO
+            if ultimo_evento == "CREADO":
+                creados += 1
+
+            # Insertar
+            nueva_dgt_digitalizacion = DgtDigitalizacion(
                 id=archivo_uuid,
                 autoridad_id = autoridad.id,
                 dgt_ruta_id=dgt_ruta.id,
@@ -151,16 +188,18 @@ def _obtener_dgt_ruta(
                 archivo_crc32c=archivo_crc32c,
                 archivo_actualizado=archivo_actualizado,
                 archivo_tamano=archivo_tamano,
-                expediente=vsp_digitalizacion.expediente,
-                expediente_anio=vsp_digitalizacion.expediente_anio,
-                expediente_num=vsp_digitalizacion.expediente_num,
-                descripcion=vsp_digitalizacion.descripcion,
+                expediente=expediente,
+                expediente_anio=expediente_anio,
+                expediente_num=expediente_num,
+                descripcion=descripcion,
+                ultimo_evento=ultimo_evento,
+                ultimo_evento_creado=archivo_actualizado,
             )
-            db.add(dgt_digitalizacion)
+            db.add(nueva_dgt_digitalizacion)
             db.flush()
             db.add(
                 DgtDigitalizacionBitacora(
-                    dgt_digitalizacion_id=dgt_digitalizacion.id,
+                    dgt_digitalizacion_id=nueva_dgt_digitalizacion.id,
                     archivo_url=archivo_url,
                     archivo_md5_old="",
                     archivo_md5_new=archivo_md5,
@@ -168,14 +207,20 @@ def _obtener_dgt_ruta(
                     archivo_crc32c_new=archivo_crc32c,
                     archivo_actualizado=archivo_actualizado,
                     archivo_tamano=archivo_tamano,
-                    evento="CREADO",
+                    evento=ultimo_evento,
                 )
             )
-            creados += 1
+
+            # Actualizar
+            if dgt_entrega:
+                dgt_entrega.archivo_uuid = archivo_uuid
+                db.add(dgt_entrega)
+
             continue
 
-        # B) Ya existe y coincide el md5 y crc32c, omitir
+        # B) Ya existe, si coincide el md5 y crc32c
         if dgt_digitalizacion.archivo_md5 == archivo_md5 and dgt_digitalizacion.archivo_crc32c == archivo_crc32c:
+            # TODO: Consultar dgt_entregas para averiguar si fue MODIFICADO o ELIMINADO
             omitidos += 1
             continue
 
@@ -186,6 +231,8 @@ def _obtener_dgt_ruta(
         dgt_digitalizacion.archivo_crc32c = archivo_crc32c
         dgt_digitalizacion.archivo_actualizado = archivo_actualizado
         dgt_digitalizacion.archivo_tamano = archivo_tamano
+        dgt_digitalizacion.ultimo_evento = "MODIFICADO"
+        dgt_digitalizacion.ultimo_evento_creado = archivo_actualizado
         db.add(dgt_digitalizacion)
         db.add(
             DgtDigitalizacionBitacora(
@@ -212,6 +259,7 @@ def _obtener_dgt_ruta(
     for dgt_digitalizacion in dgt_digitalizaciones_previas:
         if dgt_digitalizacion.archivo_url in archivo_urls_en_deposito:
             continue
+        dgt_digitalizacion.ultimo_evento = "ELIMINADO"
         dgt_digitalizacion.estatus = "B"
         db.add(dgt_digitalizacion)
         db.add(
@@ -263,14 +311,14 @@ def obtener(dgt_ruta_clave: str = ""):
 
     dgt_ruta_clave = safe_clave(dgt_ruta_clave, max_len=64)
     if dgt_ruta_clave != "":
-        console.print(f"Obteniendo DgtEntregas de {dgt_ruta_clave}...")
+        console.print(f"Obteniendo digitalizaciones de {dgt_ruta_clave}...")
         consulta = consulta.where(DgtRuta.clave == dgt_ruta_clave).where(DgtRuta.estatus == "A")
         renglones = db.execute(consulta).all()
         if not renglones:
             console.print(f"[red]DgtRuta con clave {dgt_ruta_clave} no encontrada o eliminada[/red]")
             raise Exit(code=1)
     else:
-        console.print("Obteniendo DgtEntregas de todas las rutas activas...")
+        console.print("Obteniendo digitalizaciones de todas las rutas activas...")
         consulta = consulta.where(DgtRuta.estatus == "A")
         renglones = db.execute(consulta).all()
         if not renglones:

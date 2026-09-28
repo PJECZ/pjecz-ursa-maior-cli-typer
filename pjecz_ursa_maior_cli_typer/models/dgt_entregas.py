@@ -46,6 +46,9 @@ class DgtEntrega(Base):
     ultimo_evento: Mapped[Optional[str]] = mapped_column(String(24))
     ultimo_evento_creado: Mapped[Optional[datetime]]
 
+    # Columnas que se define cuando hay una copia en otra tabla
+    archivo_uuid: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))  # Ya fue entregado a dgt_digitalizaciones
+
     # Hijos
     dgt_entregas_bitacoras: Mapped[list["DgtEntregaBitacora"]] = relationship(back_populates="dgt_entrega")
 
