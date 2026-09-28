@@ -49,18 +49,18 @@ def consultar(
     )
     autoridad_clave = safe_clave(autoridad_clave)
     if autoridad_clave != "":
-        autoridad = db.execute(select(Autoridad.id).filter(Autoridad.clave == autoridad_clave)).first()
+        autoridad = db.execute(select(Autoridad.id).where(Autoridad.clave == autoridad_clave)).first()
         if autoridad is None:
             console.print(f"[red]Autoridad con clave {autoridad_clave} no encontrada[/red]")
             raise Exit(code=1)
-        stmt = stmt.filter(DgtEntrega.autoridad_id == autoridad.id)
+        stmt = stmt.where(DgtEntrega.autoridad_id == autoridad.id)
     dgt_ruta_clave = safe_clave(dgt_ruta_clave)
     if dgt_ruta_clave != "":
-        dgt_ruta = db.execute(select(DgtRuta.id).filter(DgtRuta.clave == dgt_ruta_clave)).first()
+        dgt_ruta = db.execute(select(DgtRuta.id).where(DgtRuta.clave == dgt_ruta_clave)).first()
         if dgt_ruta is None:
             console.print(f"[red]DGT ruta con clave {dgt_ruta_clave} no encontrada[/red]")
             raise Exit(code=1)
-        stmt = stmt.filter(DgtEntrega.dgt_ruta_id == dgt_ruta.id)
+        stmt = stmt.where(DgtEntrega.dgt_ruta_id == dgt_ruta.id)
     stmt = stmt.order_by(DgtEntrega.archivo_actualizado.desc()).offset(offset).limit(limit)
     tabla = Table(title="DGT Entregas")
     tabla.add_column("ID", header_style="green", no_wrap=True)
@@ -116,8 +116,8 @@ def _obtener_dgt_ruta(
         # Buscar en la base de datos si se tiene ese registro
         consulta = (
             select(DgtEntrega)
-            .filter(DgtEntrega.dgt_ruta_id == dgt_ruta.id)
-            .filter(DgtEntrega.archivo_url == archivo_url)
+            .where(DgtEntrega.dgt_ruta_id == dgt_ruta.id)
+            .where(DgtEntrega.archivo_url == archivo_url)
         )
         dgt_entrega = db.execute(consulta).scalar_one_or_none()
 
@@ -170,6 +170,8 @@ def _obtener_dgt_ruta(
         dgt_entrega.archivo_crc32c = archivo_crc32c
         dgt_entrega.archivo_actualizado = archivo_actualizado
         dgt_entrega.archivo_tamano = archivo_tamano
+        dgt_entrega.ultimo_evento = "MODIFICADO"
+        dgt_entrega.ultimo_evento_creado = archivo_actualizado
         db.add(dgt_entrega)
         db.add(
             DgtEntregaBitacora(
@@ -189,11 +191,14 @@ def _obtener_dgt_ruta(
     # D) No están en el depósito, dar de baja y agregar bitácora de ELIMINADO
     eliminados = 0
     dgt_entregas_previas = db.execute(
-        select(DgtEntrega).filter(DgtEntrega.dgt_ruta_id == dgt_ruta.id).filter(DgtEntrega.estatus == "A")
+        select(DgtEntrega)
+        .where(DgtEntrega.dgt_ruta_id == dgt_ruta.id)
+        .where(DgtEntrega.estatus == "A")
     ).scalars()
     for dgt_entrega in dgt_entregas_previas:
         if dgt_entrega.archivo_url in archivo_urls_en_deposito:
             continue
+        dgt_entrega.ultimo_evento = "ELIMINADO"
         dgt_entrega.estatus = "B"
         db.add(dgt_entrega)
         db.add(
@@ -241,14 +246,14 @@ def obtener(dgt_ruta_clave: str = ""):
 
     dgt_ruta_clave = safe_clave(dgt_ruta_clave, max_len=64)
     if dgt_ruta_clave != "":
-        console.print(f"Obteniendo DgtEntregas de {dgt_ruta_clave}...")
+        console.print(f"Obteniendo entregas de {dgt_ruta_clave}...")
         consulta = consulta.where(DgtRuta.clave == dgt_ruta_clave).where(DgtRuta.estatus == "A")
         renglones = db.execute(consulta).all()
         if not renglones:
             console.print(f"[red]DgtRuta con clave {dgt_ruta_clave} no encontrada o eliminada[/red]")
             raise Exit(code=1)
     else:
-        console.print("Obteniendo DgtEntregas de todas las rutas activas...")
+        console.print("Obteniendo entregas de todas las rutas activas...")
         consulta = consulta.where(DgtRuta.estatus == "A")
         renglones = db.execute(consulta).all()
         if not renglones:
