@@ -15,6 +15,7 @@ from pjecz_ursa_maior_cli_typer.models.dgt_depositos import DgtDeposito
 from pjecz_ursa_maior_cli_typer.models.dgt_entregas import DgtEntrega
 from pjecz_ursa_maior_cli_typer.models.dgt_entregas_bitacoras import DgtEntregaBitacora
 from pjecz_ursa_maior_cli_typer.models.dgt_rutas import DgtRuta
+from pjecz_ursa_maior_cli_typer.models.vsp_digitalizaciones import VspDigitalizacion
 from pjecz_ursa_maior_cli_typer.utils.database import get_database
 from pjecz_ursa_maior_cli_typer.utils.digitalizaciones import parsear_num_anio_desc
 from pjecz_ursa_maior_cli_typer.utils.safe_string import safe_clave
@@ -22,6 +23,7 @@ from pjecz_ursa_maior_cli_typer.utils.safe_string import safe_clave
 app = Typer(help="DGT Entregas comandos")
 
 DGT_DEPOSITO_PROPOSITO = "ENTREGAS"
+DGT_TIPO_CLAVE = "EXP"  # Cuando sea tipo EXPEDIENTE se va a buscar en vsp_digitalizaciones
 
 
 @app.command()
@@ -90,7 +92,7 @@ def _obtener_dgt_ruta(
     autoridad: Autoridad,
 ):
     """Rastrear el depósito e insertar o actualizar registros en DgtEntrega de una ruta"""
-    console.print(f"Depósito: {dgt_deposito.clave.lower()}, Directorio: {dgt_ruta.directorio}, Autoridad: {autoridad.clave}")
+    console.print(f"Depósito: {dgt_deposito.clave.lower()}, Autoridad: {autoridad.clave}, Directorio: {dgt_ruta.directorio}")
 
     # Obtener los recursos en el depósito, en el directorio
     blobs = cliente.list_blobs(dgt_deposito.clave.lower(), prefix=dgt_ruta.directorio)
@@ -104,6 +106,10 @@ def _obtener_dgt_ruta(
         if blob.name.endswith("/"):
             continue
 
+        # Saltar si no es el subdirectorio, por ejemplo, entre slt-j2-mer/ y slt-j2-mer-exhorto/
+        if not blob.name.startswith(f"{dgt_ruta.directorio}/"):
+            continue
+
         # Obtener información del recurso
         archivo_url = f"gs://{dgt_deposito.clave.lower()}/{blob.name}"
         archivo_urls_en_deposito.add(archivo_url)
@@ -113,17 +119,33 @@ def _obtener_dgt_ruta(
         archivo_actualizado = blob.updated
         archivo_tamano = blob.size or 0
 
-        # Buscar en la base de datos si se tiene ese registro
-        consulta = (
-            select(DgtEntrega)
-            .where(DgtEntrega.dgt_ruta_id == dgt_ruta.id)
-            .where(DgtEntrega.archivo_url == archivo_url)
-        )
-        dgt_entrega = db.execute(consulta).scalar_one_or_none()
+        # Los nombres de los archivos deben tener número, año y/o descripción
+        # Si el número o el año no es válido entrega cero
+        # Si no tiene descripción entrega ""
+        num, anio, desc = parsear_num_anio_desc(archivo_nombre.split(".")[0])
 
-        # A) No existe una coincidencia, crear un nuevo DgtEntrega
+        # Buscar en dgt_entregas
+        dgt_entrega = db.execute(
+            select(DgtEntrega)
+            .where(DgtEntrega.archivo_url == archivo_url)
+        ).scalar_one_or_none()
+
+        # A) No existe, crear un nuevo DgtEntrega
         if dgt_entrega is None:
-            num, anio, desc = parsear_num_anio_desc(archivo_nombre.split(".")[0])
+
+            # Buscar en vsp_digitalizaciones para saber el UUID
+            # Solo se copian los EXHORTOS, por eso solo consultamos ese tipo
+            vsp_digitalizacion = None
+            if num and anio and dgt_ruta.dgt_tipo.clave == DGT_TIPO_CLAVE:
+                vsp_digitalizacion = db.execute(
+                    select(VspDigitalizacion)
+                    .where(VspDigitalizacion.autoridad_id == autoridad.id)
+                    .where(VspDigitalizacion.expediente_anio == anio)
+                    .where(VspDigitalizacion.expediente_num == num)
+                    .where(VspDigitalizacion.descripcion == desc)
+                ).scalar_one_or_none()
+
+            # Insertar
             dgt_entrega = DgtEntrega(
                 autoridad_id=autoridad.id,
                 dgt_ruta_id=dgt_ruta.id,
@@ -140,8 +162,12 @@ def _obtener_dgt_ruta(
                 ultimo_evento="CREADO",
                 ultimo_evento_creado=archivo_actualizado,
             )
+            if vsp_digitalizacion:
+                dgt_entrega.archivo_uuid = vsp_digitalizacion.archivo_uuid
             db.add(dgt_entrega)
             db.flush()
+
+            # Agregar a la bitácora
             db.add(
                 DgtEntregaBitacora(
                     dgt_entrega_id=dgt_entrega.id,
@@ -156,6 +182,8 @@ def _obtener_dgt_ruta(
                 )
             )
             creados += 1
+
+            # Continuar
             continue
 
         # B) Ya existe y coincide el md5 y crc32c, omitir
