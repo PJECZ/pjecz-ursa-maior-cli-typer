@@ -46,11 +46,11 @@ def parsear_num_anio_desc(texto: str) -> tuple[int, int, str]:
         if valor >= 1:
             numero = valor
 
-    # Validar año: exactamente 4 dígitos y no mayor al año actual
+    # Validar año: exactamente 4 dígitos y entre 1800 y el año actual
     anio = 0
     if re.fullmatch(r"\d{4}", anio_str):
         valor = int(anio_str)
-        if valor <= date.today().year:
+        if 1800 <= valor <= date.today().year:
             anio = valor
 
     return numero, anio, descripcion

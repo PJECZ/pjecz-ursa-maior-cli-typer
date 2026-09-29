@@ -3,6 +3,7 @@ DGT Digitalizaciones commandos
 """
 
 import base64
+from datetime import datetime
 from uuid import UUID
 
 from google.cloud import storage
@@ -92,18 +93,22 @@ def _obtener_dgt_ruta(
     autoridad: Autoridad,
 ):
     """Rastrear el depósito e insertar o actualizar registros en DgtDigitalizaciones de una ruta"""
-    console.print(f"Depósito: {dgt_deposito.clave.lower()}, Directorio: {dgt_ruta.directorio}, Autoridad: {autoridad.clave}")
-
-    # Obtener los recursos en el depósito, en el directorio
-    blobs = cliente.list_blobs(dgt_deposito.clave.lower(), prefix=dgt_ruta.directorio)
+    console.print(f"Depósito: {dgt_deposito.clave.lower()}, Autoridad: {autoridad.clave}, Directorio: {dgt_ruta.directorio}")
 
     # Inicializar variables
     archivo_urls_en_deposito = set()
     creados = modificados = omitidos = eliminados = invalidos = polizones = 0
 
+    # Obtener los recursos en el depósito, en el directorio
+    blobs = cliente.list_blobs(dgt_deposito.clave.lower(), prefix=dgt_ruta.directorio)
+
     # Bucle por cada recurso en el depósito
     for blob in blobs:
         if blob.name.endswith("/"):
+            continue
+
+        # Saltar si no es el subdirectorio, por ejemplo, entre slt-j2-mer/ y slt-j2-mer-exhorto/
+        if not blob.name.startswith(f"{dgt_ruta.directorio}/"):
             continue
 
         # Obtener información del recurso
@@ -123,7 +128,7 @@ def _obtener_dgt_ruta(
             continue
         archivo_uuid = UUID(archivo_uuid_str)
 
-        # Consultar en dgt_digitalizaciones
+        # Buscar en dgt_digitalizaciones ese UUID
         dgt_digitalizacion = db.execute(
             select(DgtDigitalizacion)
             .where(DgtDigitalizacion.id == archivo_uuid)
@@ -131,35 +136,39 @@ def _obtener_dgt_ruta(
 
         # A) No existe un registro en dgt_digitalizaciones
         if dgt_digitalizacion is None:
+            dgt_entrega = None
+            vsp_digitalizacion = None
+
+            # Inicializar variables
             expediente = ""
             expediente_anio = 0
             expediente_num = 0
             descripcion = ""
             ultimo_evento = ""
 
-            # Buscar en dgt_entregas
+            # Buscar en dgt_entregas ese UUID
             dgt_entrega = db.execute(
                 select(DgtEntrega)
                 .where(DgtEntrega.archivo_uuid == archivo_uuid)
             ).scalar_one_or_none()
 
-            # Si se encontró en dgt_entregas
+            # Si se encontró en dgt_entregas, tomamos sus datos
             if dgt_entrega:
-                expediente = dgt_entrega.expediente
-                expediente_anio = dgt_entrega.expediente_anio
-                expediente_num = dgt_entrega.expediente_num
-                descripcion = dgt_entrega.expediente.descripcion
+                expediente = dgt_entrega.expediente if dgt_entrega.expediente else None
+                expediente_anio = dgt_entrega.expediente_anio if 1800 <= dgt_entrega.expediente_anio <= datetime.now().year else None
+                expediente_num = dgt_entrega.expediente_num if dgt_entrega.expediente_num else None
+                descripcion = dgt_entrega.descripcion if dgt_entrega.descripcion else None
                 ultimo_evento = dgt_entrega.ultimo_evento
-            else:  # NO se encontró en dgt_entregas, luego buscar en vsp_digitalizaciones
+            else:  # NO se encontró, entonces buscar en vsp_digitalizaciones ese UUID
                 vsp_digitalizacion = db.execute(
                     select(VspDigitalizacion)
                     .where(VspDigitalizacion.archivo_uuid == archivo_uuid)
                 ).scalar_one_or_none()
                 if vsp_digitalizacion:
-                    expediente = vsp_digitalizacion.expediente
-                    expediente_anio = vsp_digitalizacion.expediente_anio
-                    expediente_num = vsp_digitalizacion.expediente_num
-                    descripcion = vsp_digitalizacion.descripcion
+                    expediente = vsp_digitalizacion.expediente if vsp_digitalizacion.expediente else None
+                    expediente_anio = vsp_digitalizacion.expediente_anio if 1800 <= vsp_digitalizacion.expediente_anio <= datetime.now().year else None
+                    expediente_num = vsp_digitalizacion.expediente_num if vsp_digitalizacion.expediente_num else None
+                    descripcion = vsp_digitalizacion.descripcion if vsp_digitalizacion.descripcion else None
                     ultimo_evento = "CREADO"
                 else:  # No se encontró en ninguno de los dos, entonces este archivo es un polizón
                     polizones += 1
@@ -177,7 +186,7 @@ def _obtener_dgt_ruta(
             if ultimo_evento == "CREADO":
                 creados += 1
 
-            # Insertar
+            # Insertar dgt_digitalizacion
             nueva_dgt_digitalizacion = DgtDigitalizacion(
                 id=archivo_uuid,
                 autoridad_id = autoridad.id,
@@ -211,20 +220,16 @@ def _obtener_dgt_ruta(
                 )
             )
 
-            # Actualizar
-            if dgt_entrega:
-                dgt_entrega.archivo_uuid = archivo_uuid
-                db.add(dgt_entrega)
-
+            # Continuar
             continue
 
-        # B) Ya existe, si coincide el md5 y crc32c
+        # B) Ya existe en dgt_digitalizaciones, si coincide el md5 y crc32c
         if dgt_digitalizacion.archivo_md5 == archivo_md5 and dgt_digitalizacion.archivo_crc32c == archivo_crc32c:
             # TODO: Consultar dgt_entregas para averiguar si fue MODIFICADO o ELIMINADO
             omitidos += 1
             continue
 
-        # C) Hay diferencias, actualizar y agregar bitácora de MODIFICADO
+        # C) Hay diferencias en md5 y crc32c, actualizar a MODIFICADO
         archivo_md5_old = dgt_digitalizacion.archivo_md5
         archivo_crc32c_old = dgt_digitalizacion.archivo_crc32c
         dgt_digitalizacion.archivo_md5 = archivo_md5
@@ -249,7 +254,7 @@ def _obtener_dgt_ruta(
         )
         modificados += 1
 
-    # D) No están en el depósito, dar de baja y agregar bitácora de ELIMINADO
+    # D) No están en el depósito, cambiar estatus a "B" y el evento a ELIMINADO
     eliminados = 0
     dgt_digitalizaciones_previas = db.execute(
         select(DgtDigitalizacion)
@@ -277,8 +282,10 @@ def _obtener_dgt_ruta(
         )
         eliminados += 1
 
+    # Guardar cambios en la base de datos
     db.commit()
 
+    # Mensajes finales
     if creados > 0:
         console.print(f"Creados: [green]{creados}[/green]")
     if modificados > 0:
