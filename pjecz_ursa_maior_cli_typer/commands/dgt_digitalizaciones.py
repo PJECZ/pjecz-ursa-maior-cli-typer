@@ -114,6 +114,7 @@ def _obtener_dgt_ruta(
         # Obtener información del recurso
         archivo_url = f"gs://{dgt_deposito.clave.lower()}/{blob.name}"
         archivo_urls_en_deposito.add(archivo_url)
+        archivo_public_url = blob.public_url
         archivo_nombre = blob.name.rsplit("/", maxsplit=1)[-1]
         archivo_md5 = base64.b64decode(blob.md5_hash).hex() if blob.md5_hash else ""
         archivo_crc32c = base64.b64decode(blob.crc32c).hex() if blob.crc32c else ""
@@ -193,6 +194,7 @@ def _obtener_dgt_ruta(
                 dgt_ruta_id=dgt_ruta.id,
                 archivo_nombre=archivo_nombre,
                 archivo_url=archivo_url,
+                archivo_public_url=archivo_public_url,
                 archivo_md5=archivo_md5,
                 archivo_crc32c=archivo_crc32c,
                 archivo_actualizado=archivo_actualizado,
