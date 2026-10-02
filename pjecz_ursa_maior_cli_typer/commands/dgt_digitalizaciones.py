@@ -311,7 +311,7 @@ def _obtener_dgt_ruta(
 
     # Mensajes finales
     if anomalias > 0:
-        console.print(f"Anomalías (año o número inválidos): [red]{anomalias}[/red]")
+        console.print(f"Anomalías (fueron omitidos): [red]{anomalias}[/red]")
     if creados > 0:
         console.print(f"Creados: [green]{creados}[/green]")
     if modificados > 0:
