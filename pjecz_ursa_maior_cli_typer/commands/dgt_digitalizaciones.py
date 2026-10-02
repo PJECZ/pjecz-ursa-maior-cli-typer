@@ -218,6 +218,7 @@ def _obtener_dgt_ruta(
                     descripcion=descripcion,
                     ultimo_evento=ultimo_evento,
                     ultimo_evento_creado=archivo_actualizado,
+                    es_anomalo=False,
                 )
                 db.add(nueva_dgt_digitalizacion)
                 db.flush()
@@ -238,7 +239,15 @@ def _obtener_dgt_ruta(
                 # Continuar
                 continue
 
-            # B) Ya existe en dgt_digitalizaciones, si coincide el md5 y crc32c
+            # B.1) Se espera que TODOS tengan año y número de expediente válidos
+            # Si es_anomalo es None, entonces actualizar a False
+            # Más adelante se programará un proceso para detectar anomalías y actualizar a True
+            if dgt_digitalizacion.es_anomalo is None:
+                dgt_digitalizacion.es_anomalo = False
+                db.add(dgt_digitalizacion)
+                continue
+
+            # B.2) Ya existe en dgt_digitalizaciones, si coincide el md5 y crc32c
             if dgt_digitalizacion.archivo_md5 == archivo_md5 and dgt_digitalizacion.archivo_crc32c == archivo_crc32c:
                 # TODO: Consultar dgt_entregas para averiguar si fue MODIFICADO o ELIMINADO
                 omitidos += 1

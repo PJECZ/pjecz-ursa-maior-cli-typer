@@ -171,6 +171,7 @@ def _obtener_dgt_ruta(
                     descripcion=desc if desc else None,
                     ultimo_evento="CREADO",
                     ultimo_evento_creado=archivo_actualizado,
+                    es_anomalo=bool(not num or not anio),
                 )
                 if vsp_digitalizacion:
                     dgt_entrega.archivo_uuid = vsp_digitalizacion.archivo_uuid
@@ -200,7 +201,17 @@ def _obtener_dgt_ruta(
                 # Continuar
                 continue
 
-            # B) Ya existe y coincide el md5 y crc32c, omitir
+            # B.1) Ya existe y tiene es_anomalo en None, vamos a actualizarlo a False si sí es válido el número y año
+            if dgt_entrega.es_anomalo is None:
+                dgt_entrega.es_anomalo = bool(not num or not anio)
+                db.add(dgt_entrega)
+                if dgt_entrega.es_anomalo:
+                    anomalias += 1
+                else:
+                    modificados += 1
+                continue
+
+            # B.2) Ya existe y coincide el md5 y crc32c, omitir
             if dgt_entrega.archivo_md5 == archivo_md5 and dgt_entrega.archivo_crc32c == archivo_crc32c:
                 omitidos += 1
                 continue
