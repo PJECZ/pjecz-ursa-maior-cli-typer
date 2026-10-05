@@ -367,7 +367,7 @@ def _copiar_dgt_ruta(
         select(DgtEntrega)
         .where(DgtEntrega.dgt_ruta_id == dgt_ruta_origen.id)
         .where(DgtEntrega.estatus == "A")
-        .order_by(DgtEntrega.archivo_nombre)
+        .order_by(DgtEntrega.ultimo_evento_creado)
     ).scalars().all()
 
     with Progress() as progress:
