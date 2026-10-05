@@ -27,8 +27,8 @@ from pjecz_ursa_maior_cli_typer.utils.safe_string import safe_clave
 
 app = Typer(help="DGT Entregas comandos")
 
-DGT_DEPOSITO_PROPOSITO = "ENTREGAS"
-DGT_DEPOSITO_PROPOSITO_DESTINO = "DIGITALIZACIONES"
+COPIAR_PROPOSITO_ORIGEN = "ENTREGAS"  # Los depósitos de DgtEntrega
+COPIAR_PROPOSITO_DESTINO = "DIGITALIZACIONES"  # Los depósitos de DgtDigitalizacion
 DGT_TIPO_CLAVE = "EXP"  # Cuando sea tipo EXPEDIENTE se va a buscar en vsp_digitalizaciones
 
 
@@ -302,7 +302,7 @@ def obtener(dgt_ruta_clave: str = ""):
         select(DgtRuta, DgtDeposito, Autoridad)
         .join(DgtDeposito)
         .join(Autoridad, Autoridad.clave == DgtRuta.autoridad_clave)
-        .where(DgtDeposito.proposito == DGT_DEPOSITO_PROPOSITO)
+        .where(DgtDeposito.proposito == COPIAR_PROPOSITO_ORIGEN)
     )
 
     dgt_ruta_clave = safe_clave(dgt_ruta_clave, max_len=64)
@@ -332,7 +332,7 @@ def _buscar_dgt_ruta_destino(db, dgt_ruta_origen: DgtRuta) -> list[DgtRuta]:
         db.execute(
             select(DgtRuta)
             .join(DgtDeposito)
-            .where(DgtDeposito.proposito == DGT_DEPOSITO_PROPOSITO_DESTINO)
+            .where(DgtDeposito.proposito == COPIAR_PROPOSITO_DESTINO)
             .where(DgtDeposito.estatus == "A")
             .where(DgtRuta.autoridad_clave == dgt_ruta_origen.autoridad_clave)
             .where(DgtRuta.dgt_tipo_id == dgt_ruta_origen.dgt_tipo_id)
@@ -359,6 +359,10 @@ def _copiar_dgt_ruta(
     bucket_destino = cliente.bucket(deposito_destino)
 
     # Consultar las DgtEntregas activas de la ruta de origen
+    # TODO: Para optimizar podríamos filtrar...
+    # - Aquellos cuyo ultimo_evento_creado sea reciente
+    # - Aquellos cuyo archivo_uuid sea None
+    # - Descartar aquellos con es_anomalo sea True o None
     dgt_entregas = db.execute(
         select(DgtEntrega)
         .where(DgtEntrega.dgt_ruta_id == dgt_ruta_origen.id)
@@ -459,7 +463,7 @@ def _copiar_dgt_ruta(
 
 @app.command()
 def copiar(origen_dgt_ruta_clave: str = ""):
-    """Copiar los archivos de DgtEntrega a la DgtRuta de DIGITALIZACIONES e insertar DgtDigitalizacion
+    """Copiar los archivos de la DgtRuta origen (DgtDeposito.proposito es ENTREGAS) a DgtRuta destino (DgtDeposito.proposito es DIGITALIZACIONES)
 
     La DgtRuta de destino se determina buscando la de DIGITALIZACIONES con la misma autoridad y tipo que la de origen.
     Si no se indica la clave de la DgtRuta de origen, se procesan todas las DgtRutas con propósito ENTREGAS y estatus "A".
@@ -471,7 +475,7 @@ def copiar(origen_dgt_ruta_clave: str = ""):
     consulta = (
         select(DgtRuta)
         .join(DgtDeposito)
-        .where(DgtDeposito.proposito == DGT_DEPOSITO_PROPOSITO)
+        .where(DgtDeposito.proposito == COPIAR_PROPOSITO_ORIGEN)
         .where(DgtRuta.estatus == "A")
     )
     origen_dgt_ruta_clave = safe_clave(origen_dgt_ruta_clave, max_len=64)
@@ -479,20 +483,23 @@ def copiar(origen_dgt_ruta_clave: str = ""):
         console.print(f"Copiando entregas de {origen_dgt_ruta_clave}...")
         dgt_rutas_origen = db.execute(consulta.where(DgtRuta.clave == origen_dgt_ruta_clave)).scalars().all()
         if not dgt_rutas_origen:
-            console.print(f"[red]DgtRuta de origen {origen_dgt_ruta_clave} no encontrada, eliminada o no es de {DGT_DEPOSITO_PROPOSITO}[/red]")
+            console.print(f"[red]DgtRuta de origen {origen_dgt_ruta_clave} no encontrada, eliminada o no es {COPIAR_PROPOSITO_ORIGEN}[/red]")
             raise Exit(code=1)
     else:
-        console.print("Copiando entregas de todas las rutas activas...")
+        console.print(f"Copiando todas las rutas activas con {COPIAR_PROPOSITO_ORIGEN}...")
         consulta = consulta.where(DgtDeposito.estatus == "A")
         dgt_rutas_origen = db.execute(consulta).scalars().all()
         if not dgt_rutas_origen:
-            console.print("[yellow]No hay DgtRutas activas[/yellow]")
+            console.print(f"[yellow]No hay DgtRutas con {COPIAR_PROPOSITO_ORIGEN} activas[/yellow]")
             raise Exit(code=0)
 
+    # Inicializar cliente de Google Cloud Storage
     cliente = storage.Client()
+
+    # Bucle por cada DgtRuta de origen
     for dgt_ruta_origen in dgt_rutas_origen:
 
-        # Determinar la DgtRuta de destino por autoridad y tipo
+        # Determinar la DgtRuta de destino, debe existir exactamente una DgtRuta de destino, si no se omite
         candidatos = _buscar_dgt_ruta_destino(db, dgt_ruta_origen)
         if len(candidatos) != 1:
             console.print(
@@ -501,4 +508,5 @@ def copiar(origen_dgt_ruta_clave: str = ""):
             )
             continue
 
+        # Copiar los archivos
         _copiar_dgt_ruta(db, console, cliente, dgt_ruta_origen, candidatos[0])
