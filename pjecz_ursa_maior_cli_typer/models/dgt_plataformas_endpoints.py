@@ -8,6 +8,7 @@ from sqlalchemy import JSON, Enum, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from pjecz_ursa_maior_cli_typer.models import dgt_plataformas_endpoints_bitacoras
 from pjecz_ursa_maior_cli_typer.utils.database import Base
 
 
@@ -46,7 +47,7 @@ class DgtPlataformaEndpoint(Base):
     payload_muestra: Mapped[dict] = mapped_column(JSON, default={})
 
     # Hijos
-    dgt_plataformas_bitacoras: Mapped[list["DgtPlataformaBitacora"]] = relationship(back_populates="dgt_plataforma_endpoint")
+    dgt_plataformas_endpoints_bitacoras: Mapped[list["DgtPlataformaEndpointBitacora"]] = relationship(back_populates="dgt_plataforma_endpoint")
 
     def __repr__(self):
         """Representación"""

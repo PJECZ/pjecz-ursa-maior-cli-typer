@@ -1,5 +1,5 @@
 """
-DGT Plataformas Bitácoras, modelos
+DGT Plataformas Endpoints Bitácoras, modelos
 """
 
 import uuid
@@ -12,18 +12,18 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pjecz_ursa_maior_cli_typer.utils.database import Base
 
 
-class DgtPlataformaBitacora(Base):
-    """DgtPlataformaBitacora"""
+class DgtPlataformaEndpointBitacora(Base):
+    """DgtPlataformaEndpointBitacora"""
 
     # Nombre de la tabla
-    __tablename__ = "dgt_plataformas_bitacoras"
+    __tablename__ = "dgt_plataformas_endpoints_bitacoras"
 
     # Clave primaria
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
     # Claves foráneas
     dgt_plataforma_endpoint_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("dgt_plataformas_endpoints.id"))
-    dgt_plataforma_endpoint: Mapped["DgtPlataformaEndpoint"] = relationship(back_populates="dgt_plataformas_bitacoras")
+    dgt_plataforma_endpoint: Mapped["DgtPlataformaEndpoint"] = relationship(back_populates="dgt_plataformas_endpoints_bitacoras")
 
     # Columnas
     payload: Mapped[dict] = mapped_column(JSON, default={})
@@ -34,4 +34,4 @@ class DgtPlataformaBitacora(Base):
 
     def __repr__(self):
         """Representación"""
-        return f"<DgtPlataformaBitacora {self.id}>"
+        return f"<DgtPlataformaEndpointBitacora {self.id}>"
