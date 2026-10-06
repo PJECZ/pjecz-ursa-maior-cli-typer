@@ -116,7 +116,8 @@ def _obtener_dgt_ruta(
     autoridad: Autoridad,
 ):
     """Rastrear el depósito e insertar o actualizar registros en DgtEntrega de una ruta"""
-    console.print(f"Depósito: {dgt_deposito.clave.lower()}, Autoridad: {autoridad.clave}, Directorio: {dgt_ruta.directorio}")
+    bitacora.info(f"Obtenidendo archivos de {dgt_ruta.clave}...")
+    bitacora.info(f"Obtenidendo archivos de [cyan]{dgt_ruta.clave}[/cyan]...")
 
     # Inicializar variables
     archivo_urls_en_deposito = set()
@@ -296,14 +297,19 @@ def _obtener_dgt_ruta(
 
     # Mensajes finales
     if anomalias > 0:
+        bitacora.info(f"Anomalías: {anomalias}")
         console.print(f"Anomalías: [red]{anomalias}[/red]")
     if creados > 0:
+        bitacora.info(f"Creados: {creados}")
         console.print(f"Creados: [green]{creados}[/green]")
     if modificados > 0:
+        bitacora.info(f"Modificados: {modificados}")
         console.print(f"Modificados: [yellow]{modificados}[/yellow]")
     if omitidos > 0:
+        bitacora.info(f"Omitidos: {omitidos}")
         console.print(f"Omitidos: [gray]{omitidos}[/gray]")
     if eliminados > 0:
+        bitacora.info(f"Eliminados: {eliminados}")
         console.print(f"Eliminados: [red]{eliminados}[/red]")
 
 

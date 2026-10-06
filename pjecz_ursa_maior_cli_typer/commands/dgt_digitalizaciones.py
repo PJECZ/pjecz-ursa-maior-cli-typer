@@ -121,7 +121,8 @@ def _obtener_dgt_ruta(
     autoridad: Autoridad,
 ):
     """Rastrear el depósito e insertar o actualizar registros en DgtDigitalizaciones de una ruta"""
-    console.print(f"Depósito: {dgt_deposito.clave.lower()}, Autoridad: {autoridad.clave}, Directorio: {dgt_ruta.directorio}")
+    bitacora.info(f"Obtenido archivos de {dgt_ruta.clave}...")
+    console.print(f"Obtenido archivos de [cyan]{dgt_ruta.clave}[/cyan]...")
 
     # Inicializar variables
     archivo_urls_en_deposito = set()
@@ -338,19 +339,26 @@ def _obtener_dgt_ruta(
 
     # Mensajes finales
     if anomalias > 0:
+        bitacora.info(f"Anomalías (fueron omitidos): {anomalias}")
         console.print(f"Anomalías (fueron omitidos): [red]{anomalias}[/red]")
     if creados > 0:
+        bitacora.info(f"Creados: {creados}")
         console.print(f"Creados: [green]{creados}[/green]")
     if modificados > 0:
+        bitacora.info(f"Modificados: {modificados}")
         console.print(f"Modificados: [yellow]{modificados}[/yellow]")
     if omitidos > 0:
+        bitacora.info(f"Omitidos: {omitidos}")
         console.print(f"Omitidos: [gray]{omitidos}[/gray]")
     if eliminados > 0:
+        bitacora.info(f"Eliminados: {eliminados}")
         console.print(f"Eliminados: [blue]{eliminados}[/blue]")
     if invalidos > 0:
+        bitacora.info(f"Archivos cuyo nombre no es un UUID: {invalidos}")
         console.print(f"Archivos cuyo nombre no es un UUID: [red]{invalidos}[/red]")
     if polizones > 0:
-        console.print(f"Archivos están en el depósito pero NO en la BD: [red]{polizones}[/red]")
+        bitacora.info(f"Archivos que están en el depósito pero NO en la BD: {polizones}")
+        console.print(f"Archivos que están en el depósito pero NO en la BD: [red]{polizones}[/red]")
 
 
 @app.command()
@@ -399,7 +407,7 @@ def _entregar_dgt_ruta(
     """Entregar las nuevas DgtDigitalizacion de una DgtRuta a la DgtPlataforma"""
     deposito_origen = dgt_ruta.dgt_deposito.clave.lower()
     bitacora.info(f"Entregando digitalizaciones de {deposito_origen}/{dgt_ruta.directorio}...")
-    console.print(f"Entregando digitalizaciones de [green]{deposito_origen}/{dgt_ruta.directorio}[/green]...")
+    console.print(f"Entregando digitalizaciones de [cyan]{deposito_origen}/{dgt_ruta.directorio}[/cyan]...")
 
     # Inicializar variables
     procesados = insertados = offset = omitidos = recibidos = 0
