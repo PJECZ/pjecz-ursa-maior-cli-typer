@@ -3,15 +3,20 @@ DGT Digitalizaciones commandos
 """
 
 import base64
+import logging
+import os
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
+import pytz
+import requests
+from dotenv import load_dotenv
 from google.cloud import storage
 from rich.console import Console
 from rich.progress import Progress
 from rich.table import Table
-from sqlalchemy import select
+from sqlalchemy import func, select
 from typer import Exit, Option, Typer
 
 from pjecz_ursa_maior_cli_typer.models.autoridades import Autoridad
@@ -19,17 +24,33 @@ from pjecz_ursa_maior_cli_typer.models.dgt_depositos import DgtDeposito
 from pjecz_ursa_maior_cli_typer.models.dgt_digitalizaciones import DgtDigitalizacion
 from pjecz_ursa_maior_cli_typer.models.dgt_digitalizaciones_bitacoras import DgtDigitalizacionBitacora
 from pjecz_ursa_maior_cli_typer.models.dgt_entregas import DgtEntrega
+from pjecz_ursa_maior_cli_typer.models.dgt_plataformas import DgtPlataforma
+from pjecz_ursa_maior_cli_typer.models.dgt_plataformas_autoridades import DgtPlataformaAutoridad
+from pjecz_ursa_maior_cli_typer.models.dgt_plataformas_endpoints import DgtPlataformaEndpoint
+from pjecz_ursa_maior_cli_typer.models.dgt_plataformas_endpoints_bitacoras import DgtPlataformaEndpointBitacora
 from pjecz_ursa_maior_cli_typer.models.dgt_rutas import DgtRuta
+from pjecz_ursa_maior_cli_typer.models.dgt_tipos import DgtTipo
 from pjecz_ursa_maior_cli_typer.models.vsp_digitalizaciones import VspDigitalizacion
 from pjecz_ursa_maior_cli_typer.utils.database import get_database
 from pjecz_ursa_maior_cli_typer.utils.digitalizaciones import es_uuid_valido
 from pjecz_ursa_maior_cli_typer.utils.safe_string import safe_clave
 
+load_dotenv()  # Cargar variables de entorno desde .env
+ahora = datetime.now(pytz.timezone(os.getenv("TZ", "America/Mexico_City")))
+archivo_log = f"logs/dgt-digitalizaciones-{ahora.strftime('%Y-%m-%d-%H%M%S')}.log"
+
+bitacora = logging.getLogger(__name__)
+bitacora.setLevel(logging.INFO)
+formato = logging.Formatter("%(asctime)s:%(levelname)s:%(message)s")
+empunadura = logging.FileHandler(archivo_log)
+empunadura.setFormatter(formato)
+bitacora.addHandler(empunadura)
+
 app = Typer(help="DGT Digitalizaciones comandos")
 
 DGT_DEPOSITO_PROPOSITO = "DIGITALIZACIONES"
-ENTREGAR_PROPOSITO = "DIGITALIZACIONES"  # Los depósitos de DgtDigitalizacion pueden ENTREGAR a las plataformas
-DGT_TIPO_CLAVE = "EXP"  # Cuando sea tipo EXPEDIENTE se va a buscar en vsp_digitalizaciones
+DGT_TIPO_CLAVE = "EXP"  # Sólo el tipo EXPEDIENTE se va a buscar en vsp_digitalizaciones o se va a entregar a la DgtPlataforma
+TIMEOUT = 30  # Segundos para esperar respuesta de la API
 
 @app.command()
 def consultar(
@@ -68,8 +89,9 @@ def consultar(
             console.print(f"[red]DGT ruta con clave {dgt_ruta_clave} no encontrada[/red]")
             raise Exit(code=1)
         stmt = stmt.where(DgtDigitalizacion.dgt_ruta_id == dgt_ruta.id)
+    total = db.execute(select(func.count()).select_from(stmt.subquery())).scalar()
     stmt = stmt.order_by(DgtDigitalizacion.archivo_actualizado.desc()).offset(offset).limit(limit)
-    tabla = Table(title="DGT Digitalizaciones")
+    tabla = Table(title=f"DGT Digitalizaciones ({total})")
     tabla.add_column("ID", header_style="green", no_wrap=True)
     tabla.add_column("Autoridad", header_style="green", no_wrap=True)
     tabla.add_column("Ruta", header_style="green", no_wrap=True)
@@ -369,33 +391,169 @@ def obtener(dgt_ruta_clave: str = ""):
 def _entregar_dgt_ruta(
     db,
     console: Console,
-    cliente: storage.Client,
     dgt_ruta: DgtRuta,
     probar: bool = False,
 ):
     """Entregar las nuevas DgtDigitalizacion de una DgtRuta a la DgtPlataforma"""
     deposito_origen = dgt_ruta.dgt_deposito.clave.lower()
-    console.print(f"Entregar digitalizaciones de: [green]{deposito_origen}/{dgt_ruta.directorio}[/green]")
+    bitacora.info(f"Entregando digitalizaciones de {deposito_origen}/{dgt_ruta.directorio}...")
+    console.print(f"Entregando digitalizaciones de [green]{deposito_origen}/{dgt_ruta.directorio}[/green]...")
 
     # Inicializar variables
-    entregados = 0
+    procesados = insertados = offset = omitidos = recibidos = 0
+    limit = 100
 
-    # Consultar las DgtDigitalizaciones
+    # Consultar las digitalizaciones en la ruta dada
+    digitalizaciones_stmt = (
+        select(
+            Autoridad.clave.label("autoridad_clave"),
+            DgtDigitalizacion.expediente,
+            DgtDigitalizacion.archivo_public_url.label("url"),
+        )
+        .join(Autoridad)
+        .where(DgtDigitalizacion.dgt_ruta_id == dgt_ruta.id)
+        .where(DgtDigitalizacion.estatus == "A")
+        .order_by(DgtDigitalizacion.ultimo_evento_creado)
+    )
+
+    # Determinar el total para la barra de progreso, salir si no hay digitalizaciones
+    digitalizaciones_total = db.execute(select(func.count()).select_from(digitalizaciones_stmt.subquery())).scalar()
+    if digitalizaciones_total == 0:
+        bitacora.warning(f"No hay digitalizaciones para entregar en {deposito_origen}/{dgt_ruta.directorio}")
+        console.print(f"[yellow]No hay digitalizaciones para entregar en {deposito_origen}/{dgt_ruta.directorio}[/yellow]")
+        return
+
+    # Consultar la plataforma (API-key y ruta) a partir de autoridad_clave de la ruta
+    plataforma_stmt = (
+        select(
+            DgtPlataforma.api_key,
+            DgtPlataformaEndpoint.id.label("dgt_plataforma_endpoint_id"),
+            DgtPlataformaEndpoint.ruta.label("url"),
+        )
+        .join(DgtPlataformaAutoridad, DgtPlataformaAutoridad.dgt_plataforma_id == DgtPlataforma.id)
+        .join(DgtPlataformaEndpoint, DgtPlataformaEndpoint.dgt_plataforma_id == DgtPlataforma.id)
+        .join(Autoridad, Autoridad.id == DgtPlataformaAutoridad.autoridad_id)
+        .where(Autoridad.clave == dgt_ruta.autoridad_clave)
+        .where(DgtPlataformaEndpoint.proposito == "INSERTAR")
+        .where(DgtPlataformaEndpoint.metodo == "POST")
+    )
+    plataforma = db.execute(plataforma_stmt).first()
+    if not plataforma:
+        bitacora.error(f"No se encontró plataforma para autoridad {dgt_ruta.autoridad_clave}")
+        console.print(f"[red]No se encontró plataforma para autoridad {dgt_ruta.autoridad_clave}[/red]")
+        return
 
     # Barra de progreso para entregar las digitalizaciones
     with Progress() as progress:
-        task = progress.add_task("Entregando digitalizaciones...", total=len(dgt_digitalizaciones))
+        task = progress.add_task("Entregando digitalizaciones...", total=digitalizaciones_total)
+        digitalizaciones = []  # Inicializar el listado para el payload
 
-        # Bucle por cada DgtDigitalizacion
+        # Consultar en paquetes de LIMIT registros
+        dgt_digitalizaciones = db.execute(digitalizaciones_stmt.offset(offset).limit(limit)).scalars()
         for dgt_digitalizacion in dgt_digitalizaciones:
-            progress.update(task, advance=1)  # Avanzar la barra de progreso
+            digitalizaciones.append(
+                {
+                    "autoridadClave": dgt_digitalizacion.autoridad.clave,
+                    "numeroExpediente": dgt_digitalizacion.expediente,
+                    "url": dgt_digitalizacion.url,
+                }
+            )
 
-            # Incrementar el contador de entregados
-            entregados += 1
+        # Definir el payload
+        payload = {"digitalizaciones": digitalizaciones}
+
+        # Enviar el payload a la API de la plataforma
+        if probar is False:
+            try:
+                respuesta = requests.post(
+                    url=plataforma.url,
+                    json=payload,
+                    headers={"X-Api-Key": plataforma.api_key},
+                    timeout=TIMEOUT,
+                )
+                respuesta.raise_for_status()
+            except requests.exceptions.ConnectionError:
+                bitacora.error("No hubo respuesta al tratar de enviar al SAJI Mercantil")
+                console.print("Error: [red]No hubo respuesta al tratar de enviar[/red]")
+                return
+            except requests.exceptions.HTTPError as error:
+                bitacora.error("Error de estado al tratar de enviar: {error.response}")
+                console.print(f"Error: [red]Error de estado al tratar de enviar: {error.response}[/red]")
+                return
+            except requests.exceptions.RequestException:
+                bitacora.error("Error desconocido al tratar de enviar")
+                console.print("Error: [red]Error desconocido al tratar de enviar[/red]")
+                return
+            try:
+                datos = respuesta.json()
+            except requests.exceptions.JSONDecodeError:
+                bitacora.error("La respuesta no es JSON")
+                console.print("Error: [red]La respuesta no es JSON[/red]")
+                return
+            if "success" not in datos:
+                bitacora.error("La respuesta no tiene success")
+                console.print("Error: [red]La respuesta no tiene success[/red]")
+                return
+
+            # Si el success es False, guadar en la bitácora y pasar al siguiente paquete
+            if datos["success"] is False:
+                bitacora.error(f"Error al entregar digitalizaciones: {datos.get('message', 'Sin mensaje')}")
+                console.print(f"Error: [red]Error al entregar digitalizaciones: {datos.get('message', 'Sin mensaje')}[/red]")
+                db.add(
+                    DgtPlataformaEndpointBitacora(
+                        dgt_plataforma_endpoint_id=plataforma.dgt_plataforma_endpoint_id,
+                        payload=payload,
+                        respuesta_codigo=respuesta.status_code,
+                        respuesta_exitosa=False,
+                        respuesta_mensaje=datos.get("message", "Sin mensaje"),
+                        respuesta_datos=datos,
+                    )
+                )
+                return
+
+            # Procesar la respuesta
+            if datos.get("totalRecibidos"):
+                bitacora.info(f"Total recibidos: {datos['totalRecibidos']}")
+                console.print(f"Total recibidos: [cyan]{datos['totalRecibidos']}[/cyan]")
+                try:
+                    recibidos += int(datos["totalRecibidos"])
+                except ValueError:
+                    pass
+            if datos.get("totalInsertados"):
+                bitacora.info(f"Total insertados: {datos['totalInsertados']}")
+                console.print(f"Total insertados: [green]{datos['totalInsertados']}[/green]")
+                try:
+                    insertados += int(datos["totalInsertados"])
+                except ValueError:
+                    pass
+            if datos.get("totalOmitidos"):
+                bitacora.warning(f"Total omitidos: {datos['totalOmitidos']}")
+                console.print(f"Total omitidos: [yellow]{datos['totalOmitidos']}[/yellow]")
+                try:
+                    omitidos += int(datos["totalOmitidos"])
+                except ValueError:
+                    pass
+
+            # Procesar errores
+
+            # Actualizar la columna enviado de la difitalización
+
+            # Aplicar cambios en la base de datos
+            db.commit()
+
+        # Incrementar el contador de entregados y avanzar la barra de progreso
+        procesados += len(dgt_digitalizaciones)
+        progress.update(task, advance=len(dgt_digitalizaciones))
 
     # Mensajes finales
-    if entregados > 0:
-        console.print(f"Entregadas: [green]{entregados}[/green]")
+    if procesados > 0:
+        console.print(f"Procesados: [cyan]{procesados}[/cyan]")
+    if insertados > 0:
+        console.print(f"Insertados: [cyan]{insertados}[/cyan]")
+    if omitidos > 0:
+        console.print(f"Omitidos: [cyan]{omitidos}[/cyan]")
+    if recibidos > 0:
+        console.print(f"Recibidos: [cyan]{recibidos}[/cyan]")
 
 
 @app.command()
@@ -405,9 +563,12 @@ def entregar(
 ):
     """Entregar las nuevas DgtDigitalizacion a la API de la DgtPlataforma
 
-    Sólo las rutas cuyos depósitos tengan propósito DIGITALIZACIONES y estatus "A" se procesan.
-    Sólo las digitalizaciones de tipo EXPEDIENTE se entregan a la DgtPlataforma.
-    Si no se especifica dgt_ruta_clave, se procesan todas las DgtRutas con propósito DIGITALIZACIONES y estatus "A".
+    Si se especifica la clave de la DgtRuta, se procesará sólo esa ruta.
+    - Debe tener propósito DIGITALIZACIONES
+    - Debe ser de tipo EXPEDIENTE
+    - Debe tener estatus "A"
+
+    Si no se especifica, se procesan todas las DgtRutas con las condiciones anteriores.
     """
     console = Console()
     db = get_database()
@@ -416,8 +577,9 @@ def entregar(
     consulta = (
         select(DgtRuta)
         .join(DgtDeposito)
-        .where(DgtDeposito.proposito == ENTREGAR_PROPOSITO)
-        .where(DgtRuta.dgt_tipo_id == DGT_TIPO_CLAVE)
+        .join(DgtTipo)
+        .where(DgtDeposito.proposito == DGT_DEPOSITO_PROPOSITO)
+        .where(DgtTipo.clave == DGT_TIPO_CLAVE)
         .where(DgtRuta.estatus == "A")
     )
 
@@ -427,15 +589,15 @@ def entregar(
         console.print(f"Entregando digitalizaciones de {dgt_ruta_clave}...")
         dgt_rutas = db.execute(consulta.where(DgtRuta.clave == dgt_ruta_clave)).scalars().all()
         if not dgt_rutas:
-            console.print(f"[red]DgtRuta con clave {dgt_ruta_clave} no encontrada, eliminada o no es {ENTREGAR_PROPOSITO}[/red]")
+            console.print(f"[red]DgtRuta con clave {dgt_ruta_clave} no encontrada, eliminada o no es {DGT_DEPOSITO_PROPOSITO}[/red]")
             raise Exit(code=1)
     else:
-        console.print(f"Entregando digitalizaciones de todas las rutas activas con {ENTREGAR_PROPOSITO} y tipo {DGT_TIPO_CLAVE}...")
+        console.print(f"Entregando digitalizaciones de todas las rutas activas con {DGT_DEPOSITO_PROPOSITO} y tipo {DGT_TIPO_CLAVE}...")
         dgt_rutas = db.execute(consulta).scalars().all()
         if not dgt_rutas:
-            console.print(f"[yellow]No hay DgtRutas con {ENTREGAR_PROPOSITO} y tipo {DGT_TIPO_CLAVE} activas[/yellow]")
+            console.print(f"[yellow]No hay DgtRutas con {DGT_DEPOSITO_PROPOSITO} y tipo {DGT_TIPO_CLAVE} activas[/yellow]")
             raise Exit(code=0)
 
     # Bucle por cada DgtRuta
     for dgt_ruta in dgt_rutas:
-        _entregar_dgt_ruta(db, console, storage.Client(), dgt_ruta, probar)
+        _entregar_dgt_ruta(db, console, dgt_ruta, probar)

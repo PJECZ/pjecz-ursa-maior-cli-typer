@@ -3,15 +3,20 @@ DGT Entregas commandos
 """
 
 import base64
+import logging
+import os
+from datetime import datetime
 from typing import Annotated
 from uuid import uuid4
 
+import pytz
+from dotenv import load_dotenv
 from google.api_core.exceptions import NotFound
 from google.cloud import storage
 from rich.console import Console
 from rich.progress import Progress
 from rich.table import Table
-from sqlalchemy import select
+from sqlalchemy import func, select
 from typer import Exit, Option, Typer
 
 from pjecz_ursa_maior_cli_typer.models.autoridades import Autoridad
@@ -25,6 +30,17 @@ from pjecz_ursa_maior_cli_typer.models.vsp_digitalizaciones import VspDigitaliza
 from pjecz_ursa_maior_cli_typer.utils.database import get_database
 from pjecz_ursa_maior_cli_typer.utils.digitalizaciones import parsear_num_anio_desc
 from pjecz_ursa_maior_cli_typer.utils.safe_string import safe_clave
+
+load_dotenv()  # Cargar variables de entorno desde .env
+ahora = datetime.now(pytz.timezone(os.getenv("TZ", "America/Mexico_City")))
+archivo_log = f"logs/dgt-entregas-{ahora.strftime('%Y-%m-%d-%H%M%S')}.log"
+
+bitacora = logging.getLogger(__name__)
+bitacora.setLevel(logging.INFO)
+formato = logging.Formatter("%(asctime)s:%(levelname)s:%(message)s")
+empunadura = logging.FileHandler(archivo_log)
+empunadura.setFormatter(formato)
+bitacora.addHandler(empunadura)
 
 app = Typer(help="DGT Entregas comandos")
 
@@ -70,8 +86,9 @@ def consultar(
             console.print(f"[red]DGT ruta con clave {dgt_ruta_clave} no encontrada[/red]")
             raise Exit(code=1)
         stmt = stmt.where(DgtEntrega.dgt_ruta_id == dgt_ruta.id)
+    total = db.execute(select(func.count()).select_from(stmt.subquery())).scalar()
     stmt = stmt.order_by(DgtEntrega.archivo_actualizado.desc()).offset(offset).limit(limit)
-    tabla = Table(title="DGT Entregas")
+    tabla = Table(title=f"DGT Entregas ({total})")
     tabla.add_column("ID", header_style="green", no_wrap=True)
     tabla.add_column("Autoridad", header_style="green", no_wrap=True)
     tabla.add_column("Ruta", header_style="green", no_wrap=True)
