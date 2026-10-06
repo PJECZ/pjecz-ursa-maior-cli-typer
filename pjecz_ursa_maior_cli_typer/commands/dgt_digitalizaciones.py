@@ -5,6 +5,7 @@ DGT Digitalizaciones commandos
 import base64
 import logging
 import os
+import re
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
@@ -36,7 +37,8 @@ from pjecz_ursa_maior_cli_typer.utils.digitalizaciones import es_uuid_valido
 from pjecz_ursa_maior_cli_typer.utils.safe_string import safe_clave
 
 load_dotenv()  # Cargar variables de entorno desde .env
-ahora = datetime.now(pytz.timezone(os.getenv("TZ", "America/Mexico_City")))
+TZ = pytz.timezone(os.getenv("TZ", "America/Mexico_City"))
+ahora = datetime.now(tz=TZ)
 archivo_log = f"logs/dgt-digitalizaciones-{ahora.strftime('%Y-%m-%d-%H%M%S')}.log"
 
 bitacora = logging.getLogger(__name__)
@@ -509,6 +511,7 @@ def _entregar_dgt_ruta(
                         respuesta_datos=datos,
                     )
                 )
+                db.commit()
                 return
 
             # Procesar la respuesta
@@ -535,8 +538,36 @@ def _entregar_dgt_ruta(
                     pass
 
             # Procesar errores
+            expedientes_omitidos = []
+            if datos.get("errores"):
+                for error in datos["errores"]:
+                    bitacora.error(f"Error al entregar digitalización: {error}")
+                    console.print(f"Error: [red]Error al entregar digitalización: {error}[/red]")
+                    # Por ejemplo, un error es "Expediente no encontrado: SLT-J2-MER 456/2024"
+                    # Extraer el 00000/2024 con una expresión regular
+                    expediente_omitido = re.search(r"\d+/\d+", error)
+                    if expediente_omitido:
+                        expedientes_omitidos.append(expediente_omitido.group())
 
-            # Actualizar la columna enviado de la difitalización
+            # Guardar en la bitácora los resultados de este paquete
+            db.add(
+                DgtPlataformaEndpointBitacora(
+                    dgt_plataforma_endpoint_id=plataforma.dgt_plataforma_endpoint_id,
+                    payload=payload,
+                    respuesta_codigo=respuesta.status_code,
+                    respuesta_exitosa=True,
+                    respuesta_mensaje=datos.get("message", "Sin mensaje"),
+                    respuesta_datos=datos,
+                )
+            )
+
+            # Actualizar la columna enviado con excepción de los expedientes omitidos
+            ahora = datetime.now(tz=TZ)
+            for dgt_digitalizacion in dgt_digitalizaciones:
+                if dgt_digitalizacion.expediente in expediente_omitido:
+                    continue
+                dgt_digitalizacion.enviado = ahora
+                db.add(dgt_digitalizacion)
 
             # Aplicar cambios en la base de datos
             db.commit()
@@ -547,13 +578,33 @@ def _entregar_dgt_ruta(
 
     # Mensajes finales
     if procesados > 0:
-        console.print(f"Procesados: [cyan]{procesados}[/cyan]")
+        if probar:
+            bitacora.info(f"(PRUEBA) Se pueden procesar: {procesados}")
+            console.print(f"(PRUEBA) Se pueden procesar: [cyan]{procesados}[/cyan]")
+        else:
+            bitacora.info(f"Procesados: {procesados}")
+            console.print(f"Procesados: [cyan]{procesados}[/cyan]")
     if insertados > 0:
-        console.print(f"Insertados: [cyan]{insertados}[/cyan]")
+        if probar:
+            bitacora.info(f"(PRUEBA) Se pueden insertar: {insertados}")
+            console.print(f"(PRUEBA) Se pueden insertar: [cyan]{insertados}[/cyan]")
+        else:
+            bitacora.info(f"Insertados: {insertados}")
+            console.print(f"Insertados: [cyan]{insertados}[/cyan]")
     if omitidos > 0:
-        console.print(f"Omitidos: [cyan]{omitidos}[/cyan]")
+        if probar:
+            bitacora.info(f"(PRUEBA) Se pueden omitir: {omitidos}")
+            console.print(f"(PRUEBA) Se pueden omitir: [cyan]{omitidos}[/cyan]")
+        else:
+            bitacora.info(f"Omitidos: {omitidos}")
+            console.print(f"Omitidos: [cyan]{omitidos}[/cyan]")
     if recibidos > 0:
-        console.print(f"Recibidos: [cyan]{recibidos}[/cyan]")
+        if probar:
+            bitacora.info(f"(PRUEBA) Se pueden recibir: {recibidos}")
+            console.print(f"(PRUEBA) Se pueden recibir: [cyan]{recibidos}[/cyan]")
+        else:
+            bitacora.info(f"Recibidos: {recibidos}")
+            console.print(f"Recibidos: [cyan]{recibidos}[/cyan]")
 
 
 @app.command()
