@@ -4,6 +4,7 @@ DGT Digitalizaciones commandos
 
 import base64
 from datetime import datetime
+from typing import Annotated
 from uuid import UUID
 
 from google.cloud import storage
@@ -11,7 +12,7 @@ from rich.console import Console
 from rich.progress import Progress
 from rich.table import Table
 from sqlalchemy import select
-from typer import Exit, Typer
+from typer import Exit, Option, Typer
 
 from pjecz_ursa_maior_cli_typer.models.autoridades import Autoridad
 from pjecz_ursa_maior_cli_typer.models.dgt_depositos import DgtDeposito
@@ -27,6 +28,8 @@ from pjecz_ursa_maior_cli_typer.utils.safe_string import safe_clave
 app = Typer(help="DGT Digitalizaciones comandos")
 
 DGT_DEPOSITO_PROPOSITO = "DIGITALIZACIONES"
+ENTREGAR_PROPOSITO = "DIGITALIZACIONES"  # Los depósitos de DgtDigitalizacion pueden ENTREGAR a las plataformas
+DGT_TIPO_CLAVE = "EXP"  # Cuando sea tipo EXPEDIENTE se va a buscar en vsp_digitalizaciones
 
 @app.command()
 def consultar(
@@ -361,3 +364,78 @@ def obtener(dgt_ruta_clave: str = ""):
     cliente = storage.Client()
     for dgt_ruta, dgt_deposito, autoridad in renglones:
         _obtener_dgt_ruta(db, console, cliente, dgt_ruta, dgt_deposito, autoridad)
+
+
+def _entregar_dgt_ruta(
+    db,
+    console: Console,
+    cliente: storage.Client,
+    dgt_ruta: DgtRuta,
+    probar: bool = False,
+):
+    """Entregar las nuevas DgtDigitalizacion de una DgtRuta a la DgtPlataforma"""
+    deposito_origen = dgt_ruta.dgt_deposito.clave.lower()
+    console.print(f"Entregar digitalizaciones de: [green]{deposito_origen}/{dgt_ruta.directorio}[/green]")
+
+    # Inicializar variables
+    entregados = 0
+
+    # Consultar las DgtDigitalizaciones
+
+    # Barra de progreso para entregar las digitalizaciones
+    with Progress() as progress:
+        task = progress.add_task("Entregando digitalizaciones...", total=len(dgt_digitalizaciones))
+
+        # Bucle por cada DgtDigitalizacion
+        for dgt_digitalizacion in dgt_digitalizaciones:
+            progress.update(task, advance=1)  # Avanzar la barra de progreso
+
+            # Incrementar el contador de entregados
+            entregados += 1
+
+    # Mensajes finales
+    if entregados > 0:
+        console.print(f"Entregadas: [green]{entregados}[/green]")
+
+
+@app.command()
+def entregar(
+    dgt_ruta_clave: str = "",
+    probar: Annotated[bool, Option("--probar", "-p", help="Probar sin guardar en la base de datos")] = False,
+):
+    """Entregar las nuevas DgtDigitalizacion a la API de la DgtPlataforma
+
+    Sólo las rutas cuyos depósitos tengan propósito DIGITALIZACIONES y estatus "A" se procesan.
+    Sólo las digitalizaciones de tipo EXPEDIENTE se entregan a la DgtPlataforma.
+    Si no se especifica dgt_ruta_clave, se procesan todas las DgtRutas con propósito DIGITALIZACIONES y estatus "A".
+    """
+    console = Console()
+    db = get_database()
+
+    # Consultar las DgtRutas con propósito ESTREGAR_PROPOSITO y DGT_TIPO_CLAVE
+    consulta = (
+        select(DgtRuta)
+        .join(DgtDeposito)
+        .where(DgtDeposito.proposito == ENTREGAR_PROPOSITO)
+        .where(DgtRuta.dgt_tipo_id == DGT_TIPO_CLAVE)
+        .where(DgtRuta.estatus == "A")
+    )
+
+    # Si viene dgt_ruta_clave
+    dgt_ruta_clave = safe_clave(dgt_ruta_clave, max_len=64)
+    if dgt_ruta_clave != "":
+        console.print(f"Entregando digitalizaciones de {dgt_ruta_clave}...")
+        dgt_rutas = db.execute(consulta.where(DgtRuta.clave == dgt_ruta_clave)).scalars().all()
+        if not dgt_rutas:
+            console.print(f"[red]DgtRuta con clave {dgt_ruta_clave} no encontrada, eliminada o no es {ENTREGAR_PROPOSITO}[/red]")
+            raise Exit(code=1)
+    else:
+        console.print(f"Entregando digitalizaciones de todas las rutas activas con {ENTREGAR_PROPOSITO} y tipo {DGT_TIPO_CLAVE}...")
+        dgt_rutas = db.execute(consulta).scalars().all()
+        if not dgt_rutas:
+            console.print(f"[yellow]No hay DgtRutas con {ENTREGAR_PROPOSITO} y tipo {DGT_TIPO_CLAVE} activas[/yellow]")
+            raise Exit(code=0)
+
+    # Bucle por cada DgtRuta
+    for dgt_ruta in dgt_rutas:
+        _entregar_dgt_ruta(db, console, storage.Client(), dgt_ruta, probar)

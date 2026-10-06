@@ -28,8 +28,8 @@ from pjecz_ursa_maior_cli_typer.utils.safe_string import safe_clave
 
 app = Typer(help="DGT Entregas comandos")
 
-COPIAR_PROPOSITO_ORIGEN = "ENTREGAS"  # Los depósitos de DgtEntrega
-COPIAR_PROPOSITO_DESTINO = "DIGITALIZACIONES"  # Los depósitos de DgtDigitalizacion
+COPIAR_PROPOSITO_ORIGEN = "ENTREGAS"  # Los depósitos de DgtEntrega como origen de la copia
+COPIAR_PROPOSITO_DESTINO = "DIGITALIZACIONES"  # Los depósitos de DgtDigitalizacion como destino de la copia
 DGT_TIPO_CLAVE = "EXP"  # Cuando sea tipo EXPEDIENTE se va a buscar en vsp_digitalizaciones
 
 
@@ -353,7 +353,7 @@ def _copiar_dgt_ruta(
     """Copiar los archivos de DgtEntrega de una ruta de origen a una ruta de destino e insertar DgtDigitalizacion"""
     deposito_origen = dgt_ruta_origen.dgt_deposito.clave.lower()
     deposito_destino = dgt_ruta_destino.dgt_deposito.clave.lower()
-    console.print(f"Origen: [gray]{deposito_origen}/{dgt_ruta_origen.directorio}[/gray]")
+    console.print(f"Origen: [blue]{deposito_origen}/{dgt_ruta_origen.directorio}[/blue]")
     console.print(f"Destino: [green]{deposito_destino}/{dgt_ruta_destino.directorio}[/green]")
 
     # Inicializar variables
@@ -373,8 +373,9 @@ def _copiar_dgt_ruta(
         .order_by(DgtEntrega.ultimo_evento_creado)
     ).scalars().all()
 
+    # Barra de progreso para copiar los archivos
     with Progress() as progress:
-        task = progress.add_task("Copiando archivos...", total=len(dgt_entregas))
+        task = progress.add_task("Copiando entregas a digitalizaciones...", total=len(dgt_entregas))
 
         # Bucle por cada DgtEntrega
         for dgt_entrega in dgt_entregas:
@@ -487,7 +488,7 @@ def copiar(
     console = Console()
     db = get_database()
 
-    # Consultar las DgtRutas de origen
+    # Consultar las DgtRutas cuyo propósito sea COPIAR_PROPOSITO_ORIGEN
     consulta = (
         select(DgtRuta)
         .join(DgtDeposito)
@@ -519,7 +520,7 @@ def copiar(
         candidatos = _buscar_dgt_ruta_destino(db, dgt_ruta_origen)
         if len(candidatos) != 1:
             console.print(
-                f"[yellow]Se omite {dgt_ruta_origen.clave}: se encontraron {len(candidatos)} DgtRutas de destino "
+                f"[yellow]Se omite {dgt_ruta_origen.clave} porque NO hay DgtRutas de destino "
                 f"con autoridad {dgt_ruta_origen.autoridad_clave} y tipo {dgt_ruta_origen.dgt_tipo.clave}[/yellow]"
             )
             continue
