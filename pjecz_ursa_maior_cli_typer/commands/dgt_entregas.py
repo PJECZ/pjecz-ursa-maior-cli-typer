@@ -3,15 +3,20 @@ DGT Entregas commandos
 """
 
 import base64
+import logging
+import os
+from datetime import datetime
 from typing import Annotated
 from uuid import uuid4
 
+import pytz
+from dotenv import load_dotenv
 from google.api_core.exceptions import NotFound
 from google.cloud import storage
 from rich.console import Console
 from rich.progress import Progress
 from rich.table import Table
-from sqlalchemy import select
+from sqlalchemy import func, select
 from typer import Exit, Option, Typer
 
 from pjecz_ursa_maior_cli_typer.models.autoridades import Autoridad
@@ -26,11 +31,14 @@ from pjecz_ursa_maior_cli_typer.utils.database import get_database
 from pjecz_ursa_maior_cli_typer.utils.digitalizaciones import parsear_num_anio_desc
 from pjecz_ursa_maior_cli_typer.utils.safe_string import safe_clave
 
-app = Typer(help="DGT Entregas comandos")
-
-COPIAR_PROPOSITO_ORIGEN = "ENTREGAS"  # Los depósitos de DgtEntrega
-COPIAR_PROPOSITO_DESTINO = "DIGITALIZACIONES"  # Los depósitos de DgtDigitalizacion
+COPIAR_PROPOSITO_ORIGEN = "ENTREGAS"  # Los depósitos de DgtEntrega como origen de la copia
+COPIAR_PROPOSITO_DESTINO = "DIGITALIZACIONES"  # Los depósitos de DgtDigitalizacion como destino de la copia
 DGT_TIPO_CLAVE = "EXP"  # Cuando sea tipo EXPEDIENTE se va a buscar en vsp_digitalizaciones
+
+load_dotenv()  # Cargar variables de entorno desde .env
+TZ = pytz.timezone(os.getenv("TZ", "America/Mexico_City"))
+
+app = Typer(help="DGT Entregas comandos")
 
 
 @app.command()
@@ -70,9 +78,10 @@ def consultar(
             console.print(f"[red]DGT ruta con clave {dgt_ruta_clave} no encontrada[/red]")
             raise Exit(code=1)
         stmt = stmt.where(DgtEntrega.dgt_ruta_id == dgt_ruta.id)
+    total = db.execute(select(func.count()).select_from(stmt.subquery())).scalar()
     stmt = stmt.order_by(DgtEntrega.archivo_actualizado.desc()).offset(offset).limit(limit)
-    tabla = Table(title="DGT Entregas")
-    tabla.add_column("ID", header_style="green", no_wrap=True)
+    tabla = Table(title=f"DGT Entregas ({total})")
+    #tabla.add_column("ID", header_style="green", no_wrap=True)
     tabla.add_column("Autoridad", header_style="green", no_wrap=True)
     tabla.add_column("Ruta", header_style="green", no_wrap=True)
     tabla.add_column("Archivo", header_style="green")
@@ -80,7 +89,7 @@ def consultar(
     tabla.add_column("Actualizado", header_style="green", no_wrap=True)
     for item in db.execute(stmt):
         tabla.add_row(
-            str(item.id),
+            #str(item.id),
             item.autoridad_clave,
             item.dgt_ruta_clave,
             item.archivo_nombre,
@@ -97,9 +106,11 @@ def _obtener_dgt_ruta(
     dgt_ruta: DgtRuta,
     dgt_deposito: DgtDeposito,
     autoridad: Autoridad,
+    bitacora: logging.Logger,
 ):
     """Rastrear el depósito e insertar o actualizar registros en DgtEntrega de una ruta"""
-    console.print(f"Depósito: {dgt_deposito.clave.lower()}, Autoridad: {autoridad.clave}, Directorio: {dgt_ruta.directorio}")
+    bitacora.info(f"Obteniendo entregas de {dgt_ruta.clave}...")
+    console.print(f"Obteniendo entregas de [cyan]{dgt_ruta.clave}[/cyan]...")
 
     # Inicializar variables
     archivo_urls_en_deposito = set()
@@ -279,14 +290,19 @@ def _obtener_dgt_ruta(
 
     # Mensajes finales
     if anomalias > 0:
+        bitacora.info(f"Anomalías: {anomalias}")
         console.print(f"Anomalías: [red]{anomalias}[/red]")
     if creados > 0:
+        bitacora.info(f"Creados: {creados}")
         console.print(f"Creados: [green]{creados}[/green]")
     if modificados > 0:
+        bitacora.info(f"Modificados: {modificados}")
         console.print(f"Modificados: [yellow]{modificados}[/yellow]")
     if omitidos > 0:
+        bitacora.info(f"Omitidos: {omitidos}")
         console.print(f"Omitidos: [gray]{omitidos}[/gray]")
     if eliminados > 0:
+        bitacora.info(f"Eliminados: {eliminados}")
         console.print(f"Eliminados: [red]{eliminados}[/red]")
 
 
@@ -296,6 +312,14 @@ def obtener(dgt_ruta_clave: str = ""):
 
     Si no se indica la clave de la DgtRuta, se procesan todas las DgtRutas con propósito ENTREGAS y estatus "A".
     """
+    ahora = datetime.now(tz=TZ)
+    archivo_log = f"logs/dgt-entregas-{ahora.strftime('%Y-%m-%d-%H%M%S')}-obtener.log"
+    bitacora = logging.getLogger(__name__)
+    bitacora.setLevel(logging.INFO)
+    formato = logging.Formatter("%(asctime)s:%(levelname)s:%(message)s")
+    empunadura = logging.FileHandler(archivo_log)
+    empunadura.setFormatter(formato)
+    bitacora.addHandler(empunadura)
     console = Console()
     db = get_database()
 
@@ -308,23 +332,21 @@ def obtener(dgt_ruta_clave: str = ""):
 
     dgt_ruta_clave = safe_clave(dgt_ruta_clave, max_len=64)
     if dgt_ruta_clave != "":
-        console.print(f"Obteniendo entregas de {dgt_ruta_clave}...")
         consulta = consulta.where(DgtRuta.clave == dgt_ruta_clave).where(DgtRuta.estatus == "A")
         renglones = db.execute(consulta).all()
         if not renglones:
             console.print(f"[red]DgtRuta con clave {dgt_ruta_clave} no encontrada o eliminada[/red]")
             raise Exit(code=1)
     else:
-        console.print("Obteniendo entregas de todas las rutas activas...")
         consulta = consulta.where(DgtRuta.estatus == "A")
         renglones = db.execute(consulta).all()
         if not renglones:
             console.print("[yellow]No hay DgtRutas activas[/yellow]")
-            raise Exit(code=0)
+            raise Exit(code=1)
 
     cliente = storage.Client()
     for dgt_ruta, dgt_deposito, autoridad in renglones:
-        _obtener_dgt_ruta(db, console, cliente, dgt_ruta, dgt_deposito, autoridad)
+        _obtener_dgt_ruta(db, console, cliente, dgt_ruta, dgt_deposito, autoridad, bitacora)
 
 
 def _buscar_dgt_ruta_destino(db, dgt_ruta_origen: DgtRuta) -> list[DgtRuta]:
@@ -348,13 +370,16 @@ def _copiar_dgt_ruta(
     cliente: storage.Client,
     dgt_ruta_origen: DgtRuta,
     dgt_ruta_destino: DgtRuta,
+    bitacora: logging.Logger,
     probar: bool = False,
 ):
     """Copiar los archivos de DgtEntrega de una ruta de origen a una ruta de destino e insertar DgtDigitalizacion"""
     deposito_origen = dgt_ruta_origen.dgt_deposito.clave.lower()
     deposito_destino = dgt_ruta_destino.dgt_deposito.clave.lower()
-    console.print(f"Origen: [gray]{deposito_origen}/{dgt_ruta_origen.directorio}[/gray]")
-    console.print(f"Destino: [green]{deposito_destino}/{dgt_ruta_destino.directorio}[/green]")
+    origen_str = f"{deposito_origen}/{dgt_ruta_origen.directorio}"
+    destino_str = f"{deposito_destino}/{dgt_ruta_destino.directorio}"
+    bitacora.info(f"Copiando entregas desde {origen_str} hacia digitalizaciones {destino_str}...")
+    console.print(f"Copiando entregas desde [cyan]{origen_str}[/cyan] hacia digitalizaciones [cyan]{destino_str}[/cyan]...")
 
     # Inicializar variables
     copiados = omitidos = no_encontrados = 0
@@ -373,8 +398,9 @@ def _copiar_dgt_ruta(
         .order_by(DgtEntrega.ultimo_evento_creado)
     ).scalars().all()
 
+    # Barra de progreso para copiar los archivos
     with Progress() as progress:
-        task = progress.add_task("Copiando archivos...", total=len(dgt_entregas))
+        task = progress.add_task("Copiando entregas a digitalizaciones...", total=len(dgt_entregas))
 
         # Bucle por cada DgtEntrega
         for dgt_entrega in dgt_entregas:
@@ -463,12 +489,16 @@ def _copiar_dgt_ruta(
     # Mensajes finales
     if copiados > 0:
         if probar:
-            console.print(f"Se pueden copiar (prueba): [green]{copiados}[/green]")
+            bitacora.info(f"(PRUEBA) Se pueden copiar: {copiados}")
+            console.print(f"(PRUEBA) Se pueden copiar: [green]{copiados}[/green]")
         else:
+            bitacora.info(f"Copiados: {copiados}")
             console.print(f"Copiados: [green]{copiados}[/green]")
     if omitidos > 0:
-        console.print(f"Omitidos: [gray]{omitidos}[/gray]")
+        bitacora.info(f"Omitidos: {omitidos}")
+        console.print(f"Omitidos: [blue]{omitidos}[/blue]")
     if no_encontrados > 0:
+        bitacora.info(f"No encontrados en el depósito de origen: {no_encontrados}")
         console.print(f"No encontrados en el depósito de origen: [red]{no_encontrados}[/red]")
 
 
@@ -484,10 +514,18 @@ def copiar(
     Del destino su DgtDeposito.proposito debe ser DIGITALIZACIONES
     Si no se indica la clave de la DgtRuta de origen, se procesan todas las DgtRutas con propósito ENTREGAS y estatus "A".
     """
+    ahora = datetime.now(tz=TZ)
+    archivo_log = f"logs/dgt-entregas-{ahora.strftime('%Y-%m-%d-%H%M%S')}-copiar.log"
+    bitacora = logging.getLogger(__name__)
+    bitacora.setLevel(logging.INFO)
+    formato = logging.Formatter("%(asctime)s:%(levelname)s:%(message)s")
+    empunadura = logging.FileHandler(archivo_log)
+    empunadura.setFormatter(formato)
+    bitacora.addHandler(empunadura)
     console = Console()
     db = get_database()
 
-    # Consultar las DgtRutas de origen
+    # Consultar las DgtRutas cuyo propósito sea COPIAR_PROPOSITO_ORIGEN
     consulta = (
         select(DgtRuta)
         .join(DgtDeposito)
@@ -507,7 +545,7 @@ def copiar(
         dgt_rutas_origen = db.execute(consulta).scalars().all()
         if not dgt_rutas_origen:
             console.print(f"[yellow]No hay DgtRutas con {COPIAR_PROPOSITO_ORIGEN} activas[/yellow]")
-            raise Exit(code=0)
+            raise Exit(code=1)
 
     # Inicializar cliente de Google Cloud Storage
     cliente = storage.Client()
@@ -519,10 +557,10 @@ def copiar(
         candidatos = _buscar_dgt_ruta_destino(db, dgt_ruta_origen)
         if len(candidatos) != 1:
             console.print(
-                f"[yellow]Se omite {dgt_ruta_origen.clave}: se encontraron {len(candidatos)} DgtRutas de destino "
+                f"[yellow]Se omite {dgt_ruta_origen.clave} porque NO hay DgtRutas de destino "
                 f"con autoridad {dgt_ruta_origen.autoridad_clave} y tipo {dgt_ruta_origen.dgt_tipo.clave}[/yellow]"
             )
             continue
 
         # Copiar los archivos
-        _copiar_dgt_ruta(db, console, cliente, dgt_ruta_origen, candidatos[0], probar)
+        _copiar_dgt_ruta(db, console, cliente, dgt_ruta_origen, candidatos[0], bitacora, probar)
