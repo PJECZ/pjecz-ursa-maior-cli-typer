@@ -3,6 +3,7 @@ DGT Entregas commandos
 """
 
 import base64
+from typing import Annotated
 from uuid import uuid4
 
 from google.api_core.exceptions import NotFound
@@ -11,7 +12,7 @@ from rich.console import Console
 from rich.progress import Progress
 from rich.table import Table
 from sqlalchemy import select
-from typer import Exit, Typer
+from typer import Exit, Option, Typer
 
 from pjecz_ursa_maior_cli_typer.models.autoridades import Autoridad
 from pjecz_ursa_maior_cli_typer.models.dgt_depositos import DgtDeposito
@@ -347,11 +348,13 @@ def _copiar_dgt_ruta(
     cliente: storage.Client,
     dgt_ruta_origen: DgtRuta,
     dgt_ruta_destino: DgtRuta,
+    probar: bool = False,
 ):
     """Copiar los archivos de DgtEntrega de una ruta de origen a una ruta de destino e insertar DgtDigitalizacion"""
     deposito_origen = dgt_ruta_origen.dgt_deposito.clave.lower()
     deposito_destino = dgt_ruta_destino.dgt_deposito.clave.lower()
-    console.print(f"Origen: {deposito_origen}/{dgt_ruta_origen.directorio}, Destino: {deposito_destino}/{dgt_ruta_destino.directorio}")
+    console.print(f"Origen: [gray]{deposito_origen}/{dgt_ruta_origen.directorio}[/gray]")
+    console.print(f"Destino: [green]{deposito_destino}/{dgt_ruta_destino.directorio}[/green]")
 
     # Inicializar variables
     copiados = omitidos = no_encontrados = 0
@@ -371,7 +374,7 @@ def _copiar_dgt_ruta(
     ).scalars().all()
 
     with Progress() as progress:
-        task = progress.add_task("Copiando entregas...", total=len(dgt_entregas))
+        task = progress.add_task("Copiando archivos...", total=len(dgt_entregas))
 
         # Bucle por cada DgtEntrega
         for dgt_entrega in dgt_entregas:
@@ -394,78 +397,91 @@ def _copiar_dgt_ruta(
             blob_destino_nombre = f"{dgt_ruta_destino.directorio}/{archivo_nombre}"
 
             # Copiar el archivo en el depósito
-            blob_origen_nombre = dgt_entrega.archivo_url.removeprefix(f"gs://{deposito_origen}/")
-            try:
-                blob = bucket_origen.copy_blob(bucket_origen.blob(blob_origen_nombre), bucket_destino, blob_destino_nombre)
-            except NotFound:
-                no_encontrados += 1
-                continue
+            if probar is False:
+                blob_origen_nombre = dgt_entrega.archivo_url.removeprefix(f"gs://{deposito_origen}/")
+                try:
+                    blob = bucket_origen.copy_blob(bucket_origen.blob(blob_origen_nombre), bucket_destino, blob_destino_nombre)
+                except NotFound:
+                    no_encontrados += 1
+                    continue
 
-            # Obtener información del archivo copiado
-            archivo_url = f"gs://{deposito_destino}/{blob.name}"
-            archivo_md5 = base64.b64decode(blob.md5_hash).hex() if blob.md5_hash else ""
-            archivo_crc32c = base64.b64decode(blob.crc32c).hex() if blob.crc32c else ""
-            archivo_actualizado = blob.updated
-            archivo_tamano = blob.size or 0
+                # Obtener información del archivo copiado
+                archivo_url = f"gs://{deposito_destino}/{blob.name}"
+                archivo_md5 = base64.b64decode(blob.md5_hash).hex() if blob.md5_hash else ""
+                archivo_crc32c = base64.b64decode(blob.crc32c).hex() if blob.crc32c else ""
+                archivo_actualizado = blob.updated
+                archivo_tamano = blob.size or 0
 
-            # Insertar DgtDigitalizacion, su ID es el mismo UUID del nombre del archivo
-            dgt_digitalizacion = DgtDigitalizacion(
-                id=archivo_uuid,
-                autoridad_id=dgt_entrega.autoridad_id,
-                dgt_ruta_id=dgt_ruta_destino.id,
-                archivo_nombre=archivo_nombre,
-                archivo_url=archivo_url,
-                archivo_public_url=blob.public_url,
-                archivo_md5=archivo_md5,
-                archivo_crc32c=archivo_crc32c,
-                archivo_actualizado=archivo_actualizado,
-                archivo_tamano=archivo_tamano,
-                expediente=dgt_entrega.expediente,
-                expediente_anio=dgt_entrega.expediente_anio,
-                expediente_num=dgt_entrega.expediente_num,
-                descripcion=dgt_entrega.descripcion,
-                ultimo_evento="CREADO",
-                ultimo_evento_creado=archivo_actualizado,
-                es_anomalo=False,
-            )
-            db.add(dgt_digitalizacion)
-            db.flush()
-
-            # Agregar a la bitácora
-            db.add(
-                DgtDigitalizacionBitacora(
-                    dgt_digitalizacion_id=dgt_digitalizacion.id,
+                # Insertar DgtDigitalizacion, su ID es el mismo UUID del nombre del archivo
+                dgt_digitalizacion = DgtDigitalizacion(
+                    id=archivo_uuid,
+                    autoridad_id=dgt_entrega.autoridad_id,
+                    dgt_ruta_id=dgt_ruta_destino.id,
+                    archivo_nombre=archivo_nombre,
                     archivo_url=archivo_url,
-                    archivo_md5_old="",
-                    archivo_md5_new=archivo_md5,
-                    archivo_crc32c_old="",
-                    archivo_crc32c_new=archivo_crc32c,
+                    archivo_public_url=blob.public_url,
+                    archivo_md5=archivo_md5,
+                    archivo_crc32c=archivo_crc32c,
                     archivo_actualizado=archivo_actualizado,
                     archivo_tamano=archivo_tamano,
-                    evento="CREADO",
+                    expediente=dgt_entrega.expediente,
+                    expediente_anio=dgt_entrega.expediente_anio,
+                    expediente_num=dgt_entrega.expediente_num,
+                    descripcion=dgt_entrega.descripcion,
+                    ultimo_evento="CREADO",
+                    ultimo_evento_creado=archivo_actualizado,
+                    es_anomalo=False,
                 )
-            )
+                db.add(dgt_digitalizacion)
+                db.flush()
 
-            # Recordar en DgtEntrega que ya fue copiado
-            dgt_entrega.archivo_uuid = archivo_uuid
-            db.add(dgt_entrega)
+                # Agregar a la bitácora
+                db.add(
+                    DgtDigitalizacionBitacora(
+                        dgt_digitalizacion_id=dgt_digitalizacion.id,
+                        archivo_url=archivo_url,
+                        archivo_md5_old="",
+                        archivo_md5_new=archivo_md5,
+                        archivo_crc32c_old="",
+                        archivo_crc32c_new=archivo_crc32c,
+                        archivo_actualizado=archivo_actualizado,
+                        archivo_tamano=archivo_tamano,
+                        evento="CREADO",
+                    )
+                )
 
-            # Guardar por cada archivo para que el depósito y la base de datos no se desincronicen
-            db.commit()
+                # Recordar en DgtEntrega que ya fue copiado
+                dgt_entrega.archivo_uuid = archivo_uuid
+                db.add(dgt_entrega)
+
+                # Guardar por cada archivo para que el depósito y la base de datos no se desincronicen
+                db.commit()
+
+            # Incrementar el contador de copiados
             copiados += 1
 
     # Mensajes finales
-    console.print(f"Copiados: [green]{copiados}[/green]")
-    console.print(f"Omitidos: [gray]{omitidos}[/gray]")
+    if copiados > 0:
+        if probar:
+            console.print(f"Se pueden copiar (prueba): [green]{copiados}[/green]")
+        else:
+            console.print(f"Copiados: [green]{copiados}[/green]")
+    if omitidos > 0:
+        console.print(f"Omitidos: [gray]{omitidos}[/gray]")
     if no_encontrados > 0:
         console.print(f"No encontrados en el depósito de origen: [red]{no_encontrados}[/red]")
 
 
 @app.command()
-def copiar(origen_dgt_ruta_clave: str = ""):
-    """Copiar los archivos de la DgtRuta origen (DgtDeposito.proposito es ENTREGAS) a DgtRuta destino (DgtDeposito.proposito es DIGITALIZACIONES)
+def copiar(
+    origen_dgt_ruta_clave: str = "",
+    probar: Annotated[bool, Option("--probar", "-p", help="Probar sin guardar en la base de datos")] = False,
+):
+    """Copiar los archivos de la DgtRuta (origen)
 
+    Del origen su DgtDeposito.proposito debe ser ENTREGAS
     La DgtRuta de destino se determina buscando la de DIGITALIZACIONES con la misma autoridad y tipo que la de origen.
+    Del destino su DgtDeposito.proposito debe ser DIGITALIZACIONES
     Si no se indica la clave de la DgtRuta de origen, se procesan todas las DgtRutas con propósito ENTREGAS y estatus "A".
     """
     console = Console()
@@ -509,4 +525,4 @@ def copiar(origen_dgt_ruta_clave: str = ""):
             continue
 
         # Copiar los archivos
-        _copiar_dgt_ruta(db, console, cliente, dgt_ruta_origen, candidatos[0])
+        _copiar_dgt_ruta(db, console, cliente, dgt_ruta_origen, candidatos[0], probar)
