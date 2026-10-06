@@ -36,23 +36,15 @@ from pjecz_ursa_maior_cli_typer.utils.database import get_database
 from pjecz_ursa_maior_cli_typer.utils.digitalizaciones import es_uuid_valido
 from pjecz_ursa_maior_cli_typer.utils.safe_string import safe_clave
 
-load_dotenv()  # Cargar variables de entorno desde .env
-TZ = pytz.timezone(os.getenv("TZ", "America/Mexico_City"))
-ahora = datetime.now(tz=TZ)
-archivo_log = f"logs/dgt-digitalizaciones-{ahora.strftime('%Y-%m-%d-%H%M%S')}.log"
-
-bitacora = logging.getLogger(__name__)
-bitacora.setLevel(logging.INFO)
-formato = logging.Formatter("%(asctime)s:%(levelname)s:%(message)s")
-empunadura = logging.FileHandler(archivo_log)
-empunadura.setFormatter(formato)
-bitacora.addHandler(empunadura)
-
-app = Typer(help="DGT Digitalizaciones comandos")
-
 DGT_DEPOSITO_PROPOSITO = "DIGITALIZACIONES"
 DGT_TIPO_CLAVE = "EXP"  # Sólo el tipo EXPEDIENTE se va a buscar en vsp_digitalizaciones o se va a entregar a la DgtPlataforma
 TIMEOUT = 30  # Segundos para esperar respuesta de la API
+
+load_dotenv()  # Cargar variables de entorno desde .env
+TZ = pytz.timezone(os.getenv("TZ", "America/Mexico_City"))
+
+app = Typer(help="DGT Digitalizaciones comandos")
+
 
 @app.command()
 def consultar(
@@ -119,10 +111,11 @@ def _obtener_dgt_ruta(
     dgt_ruta: DgtRuta,
     dgt_deposito: DgtDeposito,
     autoridad: Autoridad,
+    bitacora: logging.Logger,
 ):
     """Rastrear el depósito e insertar o actualizar registros en DgtDigitalizaciones de una ruta"""
-    bitacora.info(f"Obtenido archivos de {dgt_ruta.clave}...")
-    console.print(f"Obtenido archivos de [cyan]{dgt_ruta.clave}[/cyan]...")
+    bitacora.info(f"Obtenido digitalizaciones de {dgt_ruta.clave}...")
+    console.print(f"Obtenido digitalizaciones de [cyan]{dgt_ruta.clave}[/cyan]...")
 
     # Inicializar variables
     archivo_urls_en_deposito = set()
@@ -367,6 +360,14 @@ def obtener(dgt_ruta_clave: str = ""):
 
     Si no se indica la clave de la DgtRuta, se procesan todas las DgtRutas con propósito ENTREGAS y estatus "A".
     """
+    ahora = datetime.now(tz=TZ)
+    archivo_log = f"logs/dgt-digitalizaciones-{ahora.strftime('%Y-%m-%d-%H%M%S')}-obtener.log"
+    bitacora = logging.getLogger(__name__)
+    bitacora.setLevel(logging.INFO)
+    formato = logging.Formatter("%(asctime)s:%(levelname)s:%(message)s")
+    empunadura = logging.FileHandler(archivo_log)
+    empunadura.setFormatter(formato)
+    bitacora.addHandler(empunadura)
     console = Console()
     db = get_database()
 
@@ -379,29 +380,28 @@ def obtener(dgt_ruta_clave: str = ""):
 
     dgt_ruta_clave = safe_clave(dgt_ruta_clave, max_len=64)
     if dgt_ruta_clave != "":
-        console.print(f"Obteniendo digitalizaciones de {dgt_ruta_clave}...")
         consulta = consulta.where(DgtRuta.clave == dgt_ruta_clave).where(DgtRuta.estatus == "A")
         renglones = db.execute(consulta).all()
         if not renglones:
             console.print(f"[red]DgtRuta con clave {dgt_ruta_clave} no encontrada o eliminada[/red]")
             raise Exit(code=1)
     else:
-        console.print("Obteniendo digitalizaciones de todas las rutas activas...")
         consulta = consulta.where(DgtRuta.estatus == "A")
         renglones = db.execute(consulta).all()
         if not renglones:
             console.print("[yellow]No hay DgtRutas activas[/yellow]")
-            raise Exit(code=0)
+            raise Exit(code=1)
 
     cliente = storage.Client()
     for dgt_ruta, dgt_deposito, autoridad in renglones:
-        _obtener_dgt_ruta(db, console, cliente, dgt_ruta, dgt_deposito, autoridad)
+        _obtener_dgt_ruta(db, console, cliente, dgt_ruta, dgt_deposito, autoridad, bitacora)
 
 
 def _entregar_dgt_ruta(
     db,
     console: Console,
     dgt_ruta: DgtRuta,
+    botacora: logging.Logger,
     probar: bool = False,
 ):
     """Entregar las nuevas DgtDigitalizacion de una DgtRuta a la DgtPlataforma"""
@@ -595,24 +595,24 @@ def _entregar_dgt_ruta(
     if insertados > 0:
         if probar:
             bitacora.info(f"(PRUEBA) Se pueden insertar: {insertados}")
-            console.print(f"(PRUEBA) Se pueden insertar: [cyan]{insertados}[/cyan]")
+            console.print(f"(PRUEBA) Se pueden insertar: [green]{insertados}[/green]")
         else:
             bitacora.info(f"Insertados: {insertados}")
-            console.print(f"Insertados: [cyan]{insertados}[/cyan]")
+            console.print(f"Insertados: [green]{insertados}[/green]")
     if omitidos > 0:
         if probar:
             bitacora.info(f"(PRUEBA) Se pueden omitir: {omitidos}")
-            console.print(f"(PRUEBA) Se pueden omitir: [cyan]{omitidos}[/cyan]")
+            console.print(f"(PRUEBA) Se pueden omitir: [yellow]{omitidos}[/yellow]")
         else:
             bitacora.info(f"Omitidos: {omitidos}")
-            console.print(f"Omitidos: [cyan]{omitidos}[/cyan]")
+            console.print(f"Omitidos: [yellow]{omitidos}[/yellow]")
     if recibidos > 0:
         if probar:
             bitacora.info(f"(PRUEBA) Se pueden recibir: {recibidos}")
-            console.print(f"(PRUEBA) Se pueden recibir: [cyan]{recibidos}[/cyan]")
+            console.print(f"(PRUEBA) Se pueden recibir: [green]{recibidos}[/green]")
         else:
             bitacora.info(f"Recibidos: {recibidos}")
-            console.print(f"Recibidos: [cyan]{recibidos}[/cyan]")
+            console.print(f"Recibidos: [green]{recibidos}[/green]")
 
 
 @app.command()
@@ -629,6 +629,14 @@ def entregar(
 
     Si no se especifica, se procesan todas las DgtRutas con las condiciones anteriores.
     """
+    ahora = datetime.now(tz=TZ)
+    archivo_log = f"logs/dgt-digitalizaciones-{ahora.strftime('%Y-%m-%d-%H%M%S')}-entregar.log"
+    bitacora = logging.getLogger(__name__)
+    bitacora.setLevel(logging.INFO)
+    formato = logging.Formatter("%(asctime)s:%(levelname)s:%(message)s")
+    empunadura = logging.FileHandler(archivo_log)
+    empunadura.setFormatter(formato)
+    bitacora.addHandler(empunadura)
     console = Console()
     db = get_database()
 
@@ -645,18 +653,16 @@ def entregar(
     # Si viene dgt_ruta_clave
     dgt_ruta_clave = safe_clave(dgt_ruta_clave, max_len=64)
     if dgt_ruta_clave != "":
-        console.print(f"Entregando digitalizaciones de {dgt_ruta_clave}...")
         dgt_rutas = db.execute(consulta.where(DgtRuta.clave == dgt_ruta_clave)).scalars().all()
         if not dgt_rutas:
             console.print(f"[red]DgtRuta con clave {dgt_ruta_clave} no encontrada, eliminada o no es {DGT_DEPOSITO_PROPOSITO}[/red]")
             raise Exit(code=1)
     else:
-        console.print(f"Entregando digitalizaciones de todas las rutas activas con {DGT_DEPOSITO_PROPOSITO} y tipo {DGT_TIPO_CLAVE}...")
         dgt_rutas = db.execute(consulta).scalars().all()
         if not dgt_rutas:
             console.print(f"[yellow]No hay DgtRutas con {DGT_DEPOSITO_PROPOSITO} y tipo {DGT_TIPO_CLAVE} activas[/yellow]")
-            raise Exit(code=0)
+            raise Exit(code=1)
 
     # Bucle por cada DgtRuta
     for dgt_ruta in dgt_rutas:
-        _entregar_dgt_ruta(db, console, dgt_ruta, probar)
+        _entregar_dgt_ruta(db, console, dgt_ruta, bitacora, probar)
