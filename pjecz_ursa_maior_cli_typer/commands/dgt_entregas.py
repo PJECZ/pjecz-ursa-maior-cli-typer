@@ -395,7 +395,7 @@ def _copiar_dgt_ruta(
 
     # Consultar las DgtEntregas, de la ruta de origen, que no sean anómalos, sin importar estatus A o B
     # TODO: Optimizar por ultimo_evento_creado que sea reciente
-    dgt_entregas = db.execute(
+    stmt = (
         select(
             DgtEntrega.autoridad_id,
             DgtEntrega.archivo_nombre,
@@ -408,14 +408,15 @@ def _copiar_dgt_ruta(
         .where(DgtEntrega.dgt_ruta_id == dgt_ruta_origen.id)
         .where(DgtEntrega.es_anomalo == False)
         .order_by(DgtEntrega.ultimo_evento_creado)
-    ).scalars().all()
+    )
+    total = db.execute(select(func.count()).select_from(stmt.subquery())).scalar()
 
     # Barra de progreso para copiar los archivos
     with Progress() as progress:
-        task = progress.add_task("Copiando entregas a digitalizaciones...", total=len(dgt_entregas))
+        task = progress.add_task("Copiando entregas a digitalizaciones...", total=total)
 
         # Bucle por cada DgtEntrega
-        for dgt_entrega in dgt_entregas:
+        for dgt_entrega in db.execute(stmt):
             progress.update(task, advance=1)  # Avanzar la barra de progreso
 
             # Consultar posible DgtDigitalizacion por el UUID
