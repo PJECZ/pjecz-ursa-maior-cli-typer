@@ -416,7 +416,7 @@ def _copiar_dgt_ruta(
         task = progress.add_task("Copiando entregas a digitalizaciones...", total=total)
 
         # Bucle por cada DgtEntrega
-        for dgt_entrega in db.execute(stmt):
+        for dgt_entrega in db.execute(stmt).all():
             progress.update(task, advance=1)  # Avanzar la barra de progreso
 
             # Consultar posible DgtDigitalizacion por el UUID
@@ -430,7 +430,7 @@ def _copiar_dgt_ruta(
                         DgtDigitalizacion.ultimo_evento,
                     )
                     .where(DgtDigitalizacion.id == dgt_entrega.archivo_uuid)
-                ).scalars().first()
+                ).first()
 
             # ¿Existe la digitalización?...
             se_va_a_copiar = False
@@ -578,7 +578,7 @@ def copiar(
             console.print(f"[red]DgtRuta de origen {origen_dgt_ruta_clave} no encontrada, eliminada o no es {COPIAR_PROPOSITO_ORIGEN}[/red]")
             raise Exit(code=1)
     else:
-        console.print(f"Copiando todas las rutas activas con {COPIAR_PROPOSITO_ORIGEN}...")
+        console.print(f"Copiando todas las rutas activas cuyos depósitos sean de propósito {COPIAR_PROPOSITO_ORIGEN}...")
         consulta = consulta.where(DgtDeposito.estatus == "A")
         dgt_rutas_origen = db.execute(consulta).scalars().all()
         if not dgt_rutas_origen:
