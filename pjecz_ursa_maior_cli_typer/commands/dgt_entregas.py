@@ -419,15 +419,17 @@ def _copiar_dgt_ruta(
             progress.update(task, advance=1)  # Avanzar la barra de progreso
 
             # Consultar posible DgtDigitalizacion por el UUID
-            posible_dgt_digitalizacion = db.execute(
-                select(
-                    DgtDigitalizacion.id.label("archivo_uuid"),
-                    DgtDigitalizacion.archivo_md5,
-                    DgtDigitalizacion.archivo_crc32c,
-                    DgtDigitalizacion.ultimo_evento,
-                )
-                .where(DgtDigitalizacion.id == dgt_entrega.archivo_uuid)
-            ).scalars().first()
+            posible_dgt_digitalizacion = None
+            if dgt_entrega.archivo_uuid:
+                posible_dgt_digitalizacion = db.execute(
+                    select(
+                        DgtDigitalizacion.id.label("archivo_uuid"),
+                        DgtDigitalizacion.archivo_md5,
+                        DgtDigitalizacion.archivo_crc32c,
+                        DgtDigitalizacion.ultimo_evento,
+                    )
+                    .where(DgtDigitalizacion.id == dgt_entrega.archivo_uuid)
+                ).scalars().first()
 
             # ¿Existe la digitalización?...
             se_va_a_copiar = False
@@ -435,18 +437,19 @@ def _copiar_dgt_ruta(
             if posible_dgt_digitalizacion:
                 # Sí existe, entonces comparar CRC32C y MD5...
                 if posible_dgt_digitalizacion.archivo_md5 == dgt_entrega.archivo_md5 and posible_dgt_digitalizacion.archivo_crc32c == dgt_entrega.archivo_crc32c:
-                    # So NO cambia último evento, se omite
+                    # Si NO cambia el último evento, se omite
                     if posible_dgt_digitalizacion.ultimo_evento == dgt_entrega.ultimo_evento:
+                        omitidos += 1
                         continue
-                    # a.1.b) Si último evento cambió, tal vez a MODIFICADO o ELIMINADO
+                    # No se va a copiar, pero el último evento es diferente
                     se_va_a_copiar = False
                     ultimo_evento = posible_dgt_digitalizacion.ultimo_evento
                 else:
-                    # a.2) NO coinciden CRC32C y MD5, se va a copiar
+                    # NO coinciden CRC32C y MD5, entonces ha sido MODIFICADO y se va a copiar
                     se_va_a_copiar = True
                     ultimo_evento = "MODIFICADO"
-            elif posible_dgt_digitalizacion.ultimo_evento in ("CREADO", "MODIFICADO"):
-                # b) No existe y es CREADO o MODIFICADO, entonces copiar y es CREADO
+            elif dgt_entrega.ultimo_evento in ("CREADO", "MODIFICADO"):
+                # No existe la digitalización, pero la entrega es CREADO o MODIFICADO, entonces se va a copiar
                 se_va_a_copiar = True
                 ultimo_evento = "CREADO"
 
