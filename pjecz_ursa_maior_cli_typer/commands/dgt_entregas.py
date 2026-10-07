@@ -114,7 +114,10 @@ def _obtener_dgt_ruta(
 
     # Inicializar variables
     archivo_urls_en_deposito = set()
-    anomalias = creados = modificados = omitidos = eliminados = 0
+    creados = omitidos = 0  # Contadores
+    anomalias = []
+    eliminados = []
+    modificados = []
 
     # Obtener los blobs para definir el total de blobs para la barra de progreso
     blobs = cliente.list_blobs(dgt_deposito.clave.lower(), prefix=dgt_ruta.directorio)
@@ -213,7 +216,7 @@ def _obtener_dgt_ruta(
 
                 # Si no es válido el número o el año del expediente, se considera una anomalía
                 if not num or not anio:
-                    anomalias += 1
+                    anomalias.append(archivo_url)
 
                 # Continuar
                 continue
@@ -223,9 +226,9 @@ def _obtener_dgt_ruta(
                 dgt_entrega.es_anomalo = bool(not num or not anio)
                 db.add(dgt_entrega)
                 if dgt_entrega.es_anomalo:
-                    anomalias += 1
+                    anomalias.append(archivo_url)
                 else:
-                    modificados += 1
+                    modificados.append(archivo_url)
                 continue
 
             # B.2) Ya existe y coincide el md5 y crc32c, omitir
@@ -256,10 +259,9 @@ def _obtener_dgt_ruta(
                     evento="MODIFICADO",
                 )
             )
-            modificados += 1
+            modificados.append(archivo_url)
 
     # D) No están en el depósito, dar de baja y agregar bitácora de ELIMINADO
-    eliminados = 0
     dgt_entregas_previas = db.execute(
         select(DgtEntrega)
         .where(DgtEntrega.dgt_ruta_id == dgt_ruta.id)
@@ -284,26 +286,29 @@ def _obtener_dgt_ruta(
                 evento="ELIMINADO",
             )
         )
-        eliminados += 1
+        eliminados.append(archivo_url)
 
     db.commit()
 
     # Mensajes finales
-    if anomalias > 0:
-        bitacora.info(f"Anomalías: {anomalias}")
-        console.print(f"Anomalías: [red]{anomalias}[/red]")
+    if len(anomalias) > 0:
+        for anomalia in anomalias:
+            bitacora.warning(f"Anomalía: {anomalia}")
+            console.print(f"Anomalía: [cyan]{anomalia}[/cyan]")
+    if len(modificados) > 0:
+        for modificado in modificados:
+            bitacora.warning(f"Modificado: {modificado}")
+            console.print(f"Modificado: [yellow]{modificado}[/yellow]")
+    if len(eliminados) > 0:
+        for eliminado in eliminados:
+            bitacora.warning(f"Eliminado: {eliminado}")
+            console.print(f"Eliminado: [red]{eliminado}[/red]")
     if creados > 0:
         bitacora.info(f"Creados: {creados}")
         console.print(f"Creados: [green]{creados}[/green]")
-    if modificados > 0:
-        bitacora.info(f"Modificados: {modificados}")
-        console.print(f"Modificados: [yellow]{modificados}[/yellow]")
     if omitidos > 0:
         bitacora.info(f"Omitidos: {omitidos}")
         console.print(f"Omitidos: [gray]{omitidos}[/gray]")
-    if eliminados > 0:
-        bitacora.info(f"Eliminados: {eliminados}")
-        console.print(f"Eliminados: [red]{eliminados}[/red]")
 
 
 @app.command()
@@ -382,18 +387,21 @@ def _copiar_dgt_ruta(
     console.print(f"Copiando entregas desde [cyan]{origen_str}[/cyan] hacia digitalizaciones [cyan]{destino_str}[/cyan]...")
 
     # Inicializar variables
-    copiados = omitidos = no_encontrados = 0
+    copiados = omitidos = no_encontrados = 0  # Contadores
+
+    # Definir los depósitos de Google Cloud Storage
     bucket_origen = cliente.bucket(deposito_origen)
     bucket_destino = cliente.bucket(deposito_destino)
 
     # Consultar las DgtEntregas activas de la ruta de origen
     # TODO: Para optimizar podríamos filtrar...
-    # - Aquellos cuyo ultimo_evento_creado sea reciente
-    # - Aquellos cuyo archivo_uuid sea None
-    # - Descartar aquellos con es_anomalo sea True o None
+    # - [ ] Aquellos cuyo ultimo_evento_creado sea reciente
+    # - [x] Aquellos cuyo archivo_uuid sea None
+    # - [x] Descartar aquellos con es_anomalo sea True o None
     dgt_entregas = db.execute(
         select(DgtEntrega)
         .where(DgtEntrega.dgt_ruta_id == dgt_ruta_origen.id)
+        .where(DgtEntrega.es_anomalo == False)
         .where(DgtEntrega.estatus == "A")
         .order_by(DgtEntrega.ultimo_evento_creado)
     ).scalars().all()
@@ -406,15 +414,15 @@ def _copiar_dgt_ruta(
         for dgt_entrega in dgt_entregas:
             progress.update(task, advance=1)  # Avanzar la barra de progreso
 
-            # Omitir si es anómalo o si no se sabe si lo es
-            if dgt_entrega.es_anomalo is not False:
-                omitidos += 1
-                continue
-
-            # Omitir si ya fue copiado
-            if dgt_entrega.archivo_uuid is not None:
-                omitidos += 1
-                continue
+            # TODO: Consultar DgtDigitalizaciones
+            # a) No existe, entonces copiar y es CREADO
+            # b) Sí existe, entonces comparar CRC32C y MD5...
+            # b.1) Sí coinciden CRC32C y MD5...
+            # b.1.a) No cambia último evento, se omite
+            # b.1.b) Si último evento cambió MODIFICADO, copiar y actualizar a MODIFICADO
+            # b.1.c) Si último evento cambió ELIMINADO, actualizar a ELIMINADO
+            # b.2) NO coinciden CRC32C y MD5,
+            # b.2.a) Si último evento cambió MODIFICADO, copiar y actualizar a MODIFICADO
 
             # Definir el nombre del archivo de destino con un UUID, conservando la extensión
             archivo_uuid = uuid4()
