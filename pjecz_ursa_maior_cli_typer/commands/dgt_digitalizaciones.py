@@ -578,13 +578,13 @@ def _entregar_dgt_ruta(
                 )
             )
 
-            # Actualizar la columna enviado con excepción de los expedientes omitidos
+            # Actualizar la columna entregado, con excepción de los expedientes omitidos
             ahora = datetime.now(tz=TZ)
             for dgt_digitalizacion in dgt_digitalizaciones:
                 if dgt_digitalizacion.expediente in expediente_omitido:
                     bitacora.warning(f"Expediente omitido: {dgt_digitalizacion.expediente}")
                     continue
-                dgt_digitalizacion.enviado = ahora
+                dgt_digitalizacion.entregado = ahora
                 db.add(dgt_digitalizacion)
 
             # Aplicar cambios en la base de datos
