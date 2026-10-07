@@ -119,7 +119,12 @@ def _obtener_dgt_ruta(
 
     # Inicializar variables
     archivo_urls_en_deposito = set()
-    anomalias = creados = modificados = omitidos = eliminados = invalidos = polizones = 0
+    creados = omitidos = 0  # Contadores
+    anomalias = []
+    eliminados = []
+    invalidos = []
+    modificados = []
+    polizones = []
 
     # Obtener los blobs para definir el total de blobs para la barra de progreso
     blobs = cliente.list_blobs(dgt_deposito.clave.lower(), prefix=dgt_ruta.directorio)
@@ -154,7 +159,7 @@ def _obtener_dgt_ruta(
             archivo_uuid_str = archivo_nombre.rsplit(".", maxsplit=1)[0]
             if es_uuid_valido(archivo_uuid_str) is False:
                 # Se encontró un archivo con UUID inválido
-                invalidos += 1
+                invalidos.append(archivo_url)
                 continue
             archivo_uuid = UUID(archivo_uuid_str)
 
@@ -201,21 +206,21 @@ def _obtener_dgt_ruta(
                         descripcion = vsp_digitalizacion.descripcion if vsp_digitalizacion.descripcion else None
                         ultimo_evento = "CREADO"
                     else:  # No se encontró en ninguno de los dos, entonces este archivo es un polizón
-                        polizones += 1
+                        polizones.append(archivo_url)
                         continue
 
                 # Si falta expediante, expediente_anio o expediente_num, entonces es una anomalía
                 if not expediente or not expediente_anio or not expediente_num:
-                    anomalias += 1
+                    anomalias.append(archivo_url)
                     continue
 
                 # Si su último evento es ELIMINADO
                 if ultimo_evento == "ELIMINADO":
-                    eliminados += 1
+                    eliminados.append(archivo_url)
 
                 # Si su último evento es MODIFICADO
                 if ultimo_evento == "MODIFICADO":
-                    modificados += 1
+                    modificados.append(archivo_url)
 
                 # Si su último evento es CREADO
                 if ultimo_evento == "CREADO":
@@ -297,10 +302,9 @@ def _obtener_dgt_ruta(
                     evento="MODIFICADO",
                 )
             )
-            modificados += 1
+            modificados.append(archivo_url)
 
     # D) No están en el depósito, cambiar estatus a "B" y el evento a ELIMINADO
-    eliminados = 0
     dgt_digitalizaciones_previas = db.execute(
         select(DgtDigitalizacion)
         .where(DgtDigitalizacion.dgt_ruta_id == dgt_ruta.id)
@@ -325,33 +329,38 @@ def _obtener_dgt_ruta(
                 evento="ELIMINADO",
             )
         )
-        eliminados += 1
+        eliminados.append(archivo_url)
 
     # Guardar cambios en la base de datos
     db.commit()
 
     # Mensajes finales
-    if anomalias > 0:
-        bitacora.info(f"Anomalías (fueron omitidos): {anomalias}")
-        console.print(f"Anomalías (fueron omitidos): [red]{anomalias}[/red]")
+    if len(anomalias) > 0:
+        for anomalia in anomalias:
+            bitacora.info(f"Anomalía (fueron omitidos): {anomalia}")
+            console.print(f"Anomalía (fueron omitidos): [red]{anomalia}[/red]")
+    if len(modificados) > 0:
+        for modificado in modificados:
+            bitacora.info(f"Modificado: {modificado}")
+            console.print(f"Modificado: [yellow]{modificado}[/yellow]")
+    if len(eliminados) > 0:
+        for eliminado in eliminados:
+            bitacora.info(f"Eliminado: {eliminado}")
+            console.print(f"Eliminado: [blue]{eliminado}[/blue]")
+    if len(invalidos) > 0:
+        for invalido in invalidos:
+            bitacora.info(f"Cuyo nombre no es un UUID: {invalido}")
+            console.print(f"Cuyo nombre no es un UUID: [red]{invalido}[/red]")
+    if len(polizones) > 0:
+        for polizon in polizones:
+            bitacora.info(f"Están en el depósito pero NO en la BD: {polizon}")
+            console.print(f"Están en el depósito pero NO en la BD: [red]{polizon}[/red]")
     if creados > 0:
         bitacora.info(f"Creados: {creados}")
         console.print(f"Creados: [green]{creados}[/green]")
-    if modificados > 0:
-        bitacora.info(f"Modificados: {modificados}")
-        console.print(f"Modificados: [yellow]{modificados}[/yellow]")
     if omitidos > 0:
         bitacora.info(f"Omitidos: {omitidos}")
         console.print(f"Omitidos: [gray]{omitidos}[/gray]")
-    if eliminados > 0:
-        bitacora.info(f"Eliminados: {eliminados}")
-        console.print(f"Eliminados: [blue]{eliminados}[/blue]")
-    if invalidos > 0:
-        bitacora.info(f"Archivos cuyo nombre no es un UUID: {invalidos}")
-        console.print(f"Archivos cuyo nombre no es un UUID: [red]{invalidos}[/red]")
-    if polizones > 0:
-        bitacora.info(f"Archivos que están en el depósito pero NO en la BD: {polizones}")
-        console.print(f"Archivos que están en el depósito pero NO en la BD: [red]{polizones}[/red]")
 
 
 @app.command()
@@ -401,7 +410,7 @@ def _entregar_dgt_ruta(
     db,
     console: Console,
     dgt_ruta: DgtRuta,
-    botacora: logging.Logger,
+    bitacora: logging.Logger,
     probar: bool = False,
 ):
     """Entregar las nuevas DgtDigitalizacion de una DgtRuta a la DgtPlataforma"""
@@ -573,6 +582,7 @@ def _entregar_dgt_ruta(
             ahora = datetime.now(tz=TZ)
             for dgt_digitalizacion in dgt_digitalizaciones:
                 if dgt_digitalizacion.expediente in expediente_omitido:
+                    bitacora.warning(f"Expediente omitido: {dgt_digitalizacion.expediente}")
                     continue
                 dgt_digitalizacion.enviado = ahora
                 db.add(dgt_digitalizacion)
