@@ -515,7 +515,8 @@ def _copiar_dgt_ruta(
                 # Si ya tenemos la DgtDigitalizacion
                 if posible_dgt_digitalizacion:
                     # Actualizar DgtDigitalizacion
-                    dgt_digitalizacion = posible_dgt_digitalizacion
+                    stmt = select(DgtDigitalizacion).filter_by(id=posible_dgt_digitalizacion.archivo_uuid)
+                    dgt_digitalizacion = db.execute(stmt).scalar_one()
                     dgt_digitalizacion.archivo_md5 = archivo_md5
                     dgt_digitalizacion.archivo_crc32c = archivo_crc32c
                     dgt_digitalizacion.archivo_actualizado = archivo_actualizado
