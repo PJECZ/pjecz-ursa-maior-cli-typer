@@ -498,7 +498,7 @@ def _copiar_dgt_ruta(
             # Definir el nombre del archivo de destino con un UUID, conservando la extensión
             extension = dgt_entrega.archivo_nombre.rsplit(".", maxsplit=1)[-1].lower() if "." in dgt_entrega.archivo_nombre else ""
             archivo_nombre = f"{archivo_uuid}.{extension}" if extension else str(archivo_uuid)
-            blob_destino_nombre = f"{dgt_ruta_destino.directorio}/{archivo_nombre}"
+            blob_destino_nombre = f"{dgt_ruta_destino.directorio}/{dgt_entrega.expediente_anio}/{archivo_nombre}"
 
             # Copiar el archivo
             if probar is False:
