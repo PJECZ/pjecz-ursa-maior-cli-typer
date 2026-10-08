@@ -112,6 +112,7 @@ def _obtener_dgt_ruta(
     dgt_deposito: DgtDeposito,
     autoridad: Autoridad,
     bitacora: logging.Logger,
+    probar: bool = False,
 ):
     """Rastrear el depósito e insertar o actualizar registros en DgtDigitalizaciones de una ruta"""
     bitacora.info(f"Obtenido digitalizaciones de {dgt_ruta.clave}...")
@@ -227,40 +228,41 @@ def _obtener_dgt_ruta(
                     creados += 1
 
                 # Insertar dgt_digitalizacion
-                nueva_dgt_digitalizacion = DgtDigitalizacion(
-                    id=archivo_uuid,
-                    autoridad_id = autoridad.id,
-                    dgt_ruta_id=dgt_ruta.id,
-                    archivo_nombre=archivo_nombre,
-                    archivo_url=archivo_url,
-                    archivo_public_url=archivo_public_url,
-                    archivo_md5=archivo_md5,
-                    archivo_crc32c=archivo_crc32c,
-                    archivo_actualizado=archivo_actualizado,
-                    archivo_tamano=archivo_tamano,
-                    expediente=expediente,
-                    expediente_anio=expediente_anio,
-                    expediente_num=expediente_num,
-                    descripcion=descripcion,
-                    ultimo_evento=ultimo_evento,
-                    ultimo_evento_creado=archivo_actualizado,
-                    es_anomalo=False,
-                )
-                db.add(nueva_dgt_digitalizacion)
-                db.flush()
-                db.add(
-                    DgtDigitalizacionBitacora(
-                        dgt_digitalizacion_id=nueva_dgt_digitalizacion.id,
+                if probar is False:
+                    nueva_dgt_digitalizacion = DgtDigitalizacion(
+                        id=archivo_uuid,
+                        autoridad_id = autoridad.id,
+                        dgt_ruta_id=dgt_ruta.id,
+                        archivo_nombre=archivo_nombre,
                         archivo_url=archivo_url,
-                        archivo_md5_old="",
-                        archivo_md5_new=archivo_md5,
-                        archivo_crc32c_old="",
-                        archivo_crc32c_new=archivo_crc32c,
+                        archivo_public_url=archivo_public_url,
+                        archivo_md5=archivo_md5,
+                        archivo_crc32c=archivo_crc32c,
                         archivo_actualizado=archivo_actualizado,
                         archivo_tamano=archivo_tamano,
-                        evento=ultimo_evento,
+                        expediente=expediente,
+                        expediente_anio=expediente_anio,
+                        expediente_num=expediente_num,
+                        descripcion=descripcion,
+                        ultimo_evento=ultimo_evento,
+                        ultimo_evento_creado=archivo_actualizado,
+                        es_anomalo=False,
                     )
-                )
+                    db.add(nueva_dgt_digitalizacion)
+                    db.flush()
+                    db.add(
+                        DgtDigitalizacionBitacora(
+                            dgt_digitalizacion_id=nueva_dgt_digitalizacion.id,
+                            archivo_url=archivo_url,
+                            archivo_md5_old="",
+                            archivo_md5_new=archivo_md5,
+                            archivo_crc32c_old="",
+                            archivo_crc32c_new=archivo_crc32c,
+                            archivo_actualizado=archivo_actualizado,
+                            archivo_tamano=archivo_tamano,
+                            evento=ultimo_evento,
+                        )
+                    )
 
                 # Continuar
                 continue
@@ -269,8 +271,9 @@ def _obtener_dgt_ruta(
             # Si es_anomalo es None, entonces actualizar a False
             # Más adelante se programará un proceso para detectar anomalías y actualizar a True
             if dgt_digitalizacion.es_anomalo is None:
-                dgt_digitalizacion.es_anomalo = False
-                db.add(dgt_digitalizacion)
+                if probar is False:
+                    dgt_digitalizacion.es_anomalo = False
+                    db.add(dgt_digitalizacion)
                 continue
 
             # B.2) Ya existe en dgt_digitalizaciones, si coincide el md5 y crc32c
@@ -282,26 +285,27 @@ def _obtener_dgt_ruta(
             # C) Hay diferencias en md5 y crc32c, actualizar a MODIFICADO
             archivo_md5_old = dgt_digitalizacion.archivo_md5
             archivo_crc32c_old = dgt_digitalizacion.archivo_crc32c
-            dgt_digitalizacion.archivo_md5 = archivo_md5
-            dgt_digitalizacion.archivo_crc32c = archivo_crc32c
-            dgt_digitalizacion.archivo_actualizado = archivo_actualizado
-            dgt_digitalizacion.archivo_tamano = archivo_tamano
-            dgt_digitalizacion.ultimo_evento = "MODIFICADO"
-            dgt_digitalizacion.ultimo_evento_creado = archivo_actualizado
-            db.add(dgt_digitalizacion)
-            db.add(
-                DgtDigitalizacionBitacora(
-                    dgt_digitalizacion_id=dgt_digitalizacion.id,
-                    archivo_url=archivo_url,
-                    archivo_md5_old=archivo_md5_old,
-                    archivo_md5_new=archivo_md5,
-                    archivo_crc32c_old=archivo_crc32c_old,
-                    archivo_crc32c_new=archivo_crc32c,
-                    archivo_actualizado=archivo_actualizado,
-                    archivo_tamano=archivo_tamano,
-                    evento="MODIFICADO",
+            if probar is False:
+                dgt_digitalizacion.archivo_md5 = archivo_md5
+                dgt_digitalizacion.archivo_crc32c = archivo_crc32c
+                dgt_digitalizacion.archivo_actualizado = archivo_actualizado
+                dgt_digitalizacion.archivo_tamano = archivo_tamano
+                dgt_digitalizacion.ultimo_evento = "MODIFICADO"
+                dgt_digitalizacion.ultimo_evento_creado = archivo_actualizado
+                db.add(dgt_digitalizacion)
+                db.add(
+                    DgtDigitalizacionBitacora(
+                        dgt_digitalizacion_id=dgt_digitalizacion.id,
+                        archivo_url=archivo_url,
+                        archivo_md5_old=archivo_md5_old,
+                        archivo_md5_new=archivo_md5,
+                        archivo_crc32c_old=archivo_crc32c_old,
+                        archivo_crc32c_new=archivo_crc32c,
+                        archivo_actualizado=archivo_actualizado,
+                        archivo_tamano=archivo_tamano,
+                        evento="MODIFICADO",
+                    )
                 )
-            )
             modificados.append(archivo_url)
 
     # D) No están en el depósito, cambiar estatus a "B" y el evento a ELIMINADO
@@ -313,58 +317,64 @@ def _obtener_dgt_ruta(
     for dgt_digitalizacion in dgt_digitalizaciones_previas:
         if dgt_digitalizacion.archivo_url in archivo_urls_en_deposito:
             continue
-        dgt_digitalizacion.ultimo_evento = "ELIMINADO"
-        dgt_digitalizacion.estatus = "B"
-        db.add(dgt_digitalizacion)
-        db.add(
-            DgtDigitalizacionBitacora(
-                dgt_digitalizacion_id=dgt_digitalizacion.id,
-                archivo_url=dgt_digitalizacion.archivo_url,
-                archivo_md5_old=dgt_digitalizacion.archivo_md5,
-                archivo_md5_new="",
-                archivo_crc32c_old=dgt_digitalizacion.archivo_crc32c,
-                archivo_crc32c_new="",
-                archivo_actualizado=dgt_digitalizacion.archivo_actualizado,
-                archivo_tamano=dgt_digitalizacion.archivo_tamano,
-                evento="ELIMINADO",
+        if probar is False:
+            dgt_digitalizacion.ultimo_evento = "ELIMINADO"
+            dgt_digitalizacion.estatus = "B"
+            db.add(dgt_digitalizacion)
+            db.add(
+                DgtDigitalizacionBitacora(
+                    dgt_digitalizacion_id=dgt_digitalizacion.id,
+                    archivo_url=dgt_digitalizacion.archivo_url,
+                    archivo_md5_old=dgt_digitalizacion.archivo_md5,
+                    archivo_md5_new="",
+                    archivo_crc32c_old=dgt_digitalizacion.archivo_crc32c,
+                    archivo_crc32c_new="",
+                    archivo_actualizado=dgt_digitalizacion.archivo_actualizado,
+                    archivo_tamano=dgt_digitalizacion.archivo_tamano,
+                    evento="ELIMINADO",
+                )
             )
-        )
         eliminados.append(archivo_url)
 
     # Guardar cambios en la base de datos
-    db.commit()
+    if probar is False:
+        db.commit()
 
     # Mensajes finales
+    prueba = "(PRUEBA) " if probar else ""
     if len(anomalias) > 0:
         for anomalia in anomalias:
-            bitacora.info(f"Anomalía (fueron omitidos): {anomalia}")
-            console.print(f"Anomalía (fueron omitidos): [red]{anomalia}[/red]")
+            bitacora.info(f"{prueba}Anomalía (fueron omitidos): {anomalia}")
+            console.print(f"{prueba}Anomalía (fueron omitidos): [red]{anomalia}[/red]")
     if len(modificados) > 0:
         for modificado in modificados:
-            bitacora.info(f"Modificado: {modificado}")
-            console.print(f"Modificado: [yellow]{modificado}[/yellow]")
+            bitacora.info(f"{prueba}Modificado: {modificado}")
+            console.print(f"{prueba}Modificado: [yellow]{modificado}[/yellow]")
     if len(eliminados) > 0:
         for eliminado in eliminados:
-            bitacora.info(f"Eliminado: {eliminado}")
-            console.print(f"Eliminado: [blue]{eliminado}[/blue]")
+            bitacora.info(f"{prueba}Eliminado: {eliminado}")
+            console.print(f"{prueba}Eliminado: [blue]{eliminado}[/blue]")
     if len(invalidos) > 0:
         for invalido in invalidos:
-            bitacora.info(f"Cuyo nombre no es un UUID: {invalido}")
-            console.print(f"Cuyo nombre no es un UUID: [red]{invalido}[/red]")
+            bitacora.info(f"{prueba}Cuyo nombre no es un UUID: {invalido}")
+            console.print(f"{prueba}Cuyo nombre no es un UUID: [red]{invalido}[/red]")
     if len(polizones) > 0:
         for polizon in polizones:
-            bitacora.info(f"Están en el depósito pero NO en la BD: {polizon}")
-            console.print(f"Están en el depósito pero NO en la BD: [red]{polizon}[/red]")
+            bitacora.info(f"{prueba}Están en el depósito pero NO en la BD: {polizon}")
+            console.print(f"{prueba}Están en el depósito pero NO en la BD: [red]{polizon}[/red]")
     if creados > 0:
-        bitacora.info(f"Creados: {creados}")
-        console.print(f"Creados: [green]{creados}[/green]")
+        bitacora.info(f"{prueba}Creados: {creados}")
+        console.print(f"{prueba}Creados: [green]{creados}[/green]")
     if omitidos > 0:
-        bitacora.info(f"Omitidos: {omitidos}")
-        console.print(f"Omitidos: [gray]{omitidos}[/gray]")
+        bitacora.info(f"{prueba}Omitidos: {omitidos}")
+        console.print(f"{prueba}Omitidos: [gray]{omitidos}[/gray]")
 
 
 @app.command()
-def obtener(dgt_ruta_clave: str = ""):
+def obtener(
+    dgt_ruta_clave: str = "",
+    probar: Annotated[bool, Option("--probar", "-p", help="Probar sin guardar en la base de datos")] = False,
+):
     """Insertar o actualizar registros en DgtDigitalizacion rastreando el depósito
 
     Si no se indica la clave de la DgtRuta, se procesan todas las DgtRutas con propósito ENTREGAS y estatus "A".
@@ -403,7 +413,7 @@ def obtener(dgt_ruta_clave: str = ""):
 
     cliente = storage.Client()
     for dgt_ruta, dgt_deposito, autoridad in renglones:
-        _obtener_dgt_ruta(db, console, cliente, dgt_ruta, dgt_deposito, autoridad, bitacora)
+        _obtener_dgt_ruta(db, console, cliente, dgt_ruta, dgt_deposito, autoridad, bitacora, probar)
 
 
 def _enviar_dgt_ruta(
@@ -595,34 +605,19 @@ def _enviar_dgt_ruta(
             progress.update(task, advance=len(digitalizaciones))
 
     # Mensajes finales
+    prueba = "(PRUEBA) " if probar else ""
     if enviados > 0:
-        if probar:
-            bitacora.info(f"(PRUEBA) Se pueden enviar: {enviados}")
-            console.print(f"(PRUEBA) Se pueden enviar: [cyan]{enviados}[/cyan]")
-        else:
-            bitacora.info(f"Enviados: {enviados}")
-            console.print(f"Enviados: [cyan]{enviados}[/cyan]")
+        bitacora.info(f"{prueba}Enviados: {enviados}")
+        console.print(f"{prueba}Enviados: [cyan]{enviados}[/cyan]")
     if insertados > 0:
-        if probar:
-            bitacora.info(f"(PRUEBA) Se pueden insertar: {insertados}")
-            console.print(f"(PRUEBA) Se pueden insertar: [green]{insertados}[/green]")
-        else:
-            bitacora.info(f"Insertados: {insertados}")
-            console.print(f"Insertados: [green]{insertados}[/green]")
+        bitacora.info(f"{prueba}Insertados: {insertados}")
+        console.print(f"{prueba}Insertados: [green]{insertados}[/green]")
     if omitidos > 0:
-        if probar:
-            bitacora.info(f"(PRUEBA) Se pueden omitir: {omitidos}")
-            console.print(f"(PRUEBA) Se pueden omitir: [yellow]{omitidos}[/yellow]")
-        else:
-            bitacora.info(f"Omitidos: {omitidos}")
-            console.print(f"Omitidos: [yellow]{omitidos}[/yellow]")
+        bitacora.info(f"{prueba}Omitidos: {omitidos}")
+        console.print(f"{prueba}Omitidos: [yellow]{omitidos}[/yellow]")
     if recibidos > 0:
-        if probar:
-            bitacora.info(f"(PRUEBA) Se pueden recibir: {recibidos}")
-            console.print(f"(PRUEBA) Se pueden recibir: [green]{recibidos}[/green]")
-        else:
-            bitacora.info(f"Recibidos: {recibidos}")
-            console.print(f"Recibidos: [green]{recibidos}[/green]")
+        bitacora.info(f"{prueba}Recibidos: {recibidos}")
+        console.print(f"{prueba}Recibidos: [green]{recibidos}[/green]")
 
 
 @app.command()
