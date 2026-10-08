@@ -473,6 +473,7 @@ def _enviar_dgt_ruta(
         # Bucle entre paquetes de envíos
         while offset < digitalizaciones_total:
             dgt_digitalizaciones = db.execute(digitalizaciones_stmt.offset(offset).limit(limit)).all()
+            bucle_str = f"Desde {offset} hasta {offset + len(dgt_digitalizaciones)} de {digitalizaciones_total}"
 
             # Armar las digitalizaciones para el payload
             digitalizaciones = []  # Inicializar el listado para el payload
@@ -499,32 +500,27 @@ def _enviar_dgt_ruta(
                     )
                     respuesta.raise_for_status()
                 except requests.exceptions.ConnectionError:
-                    bitacora.error("No hubo respuesta al tratar de enviar al SAJI Mercantil")
-                    console.print("Error: [red]No hubo respuesta al tratar de enviar[/red]")
+                    bitacora.error(f"{bucle_str}: No hubo respuesta al tratar de enviar")
                     return
                 except requests.exceptions.HTTPError as error:
-                    bitacora.error("Error de estado al tratar de enviar: {error.response}")
-                    console.print(f"Error: [red]Error de estado al tratar de enviar: {error.response}[/red]")
+                    bitacora.error(f"{bucle_str}: Error de estado: {error.response}")
                     return
                 except requests.exceptions.RequestException:
-                    bitacora.error("Error desconocido al tratar de enviar")
-                    console.print("Error: [red]Error desconocido al tratar de enviar[/red]")
+                    bitacora.error(f"{bucle_str}: Error desconocido al tratar de enviar")
                     return
                 try:
                     datos = respuesta.json()
                 except requests.exceptions.JSONDecodeError:
-                    bitacora.error("La respuesta no es JSON")
-                    console.print("Error: [red]La respuesta no es JSON[/red]")
+                    bitacora.error(f"{bucle_str}: La respuesta no es JSON")
                     return
                 if "success" not in datos:
-                    bitacora.error("La respuesta no tiene success")
-                    console.print("Error: [red]La respuesta no tiene success[/red]")
+                    bitacora.error(f"{bucle_str}: La respuesta no tiene success")
                     return
 
                 # Si el success es False, guadar en la bitácora y pasar al siguiente paquete
+                # NOTA: Cuando no hay recibidos el success es falso
                 if datos["success"] is False:
-                    bitacora.error(f"Error al enviar digitalizaciones: {datos.get('message', 'Sin mensaje')}")
-                    console.print(f"Error: [red]Error al enviar digitalizaciones: {datos.get('message', 'Sin mensaje')}[/red]")
+                    bitacora.warning(f"{bucle_str}: Success es falso: {datos.get('message', 'Sin mensaje')}")
                     db.add(
                         DgtPlataformaEndpointBitacora(
                             dgt_plataforma_endpoint_id=plataforma.dgt_plataforma_endpoint_id,
@@ -536,71 +532,67 @@ def _enviar_dgt_ruta(
                         )
                     )
                     db.commit()
-                    return
 
                 # Procesar la respuesta
-                if datos.get("totalRecibidos"):
-                    bitacora.info(f"Total recibidos: {datos['totalRecibidos']}")
-                    console.print(f"Total recibidos: [cyan]{datos['totalRecibidos']}[/cyan]")
-                    try:
-                        recibidos += int(datos["totalRecibidos"])
-                    except ValueError:
-                        pass
-                if datos.get("totalInsertados"):
-                    bitacora.info(f"Total insertados: {datos['totalInsertados']}")
-                    console.print(f"Total insertados: [green]{datos['totalInsertados']}[/green]")
-                    try:
-                        insertados += int(datos["totalInsertados"])
-                    except ValueError:
-                        pass
-                if datos.get("totalOmitidos"):
-                    bitacora.warning(f"Total omitidos: {datos['totalOmitidos']}")
-                    console.print(f"Total omitidos: [yellow]{datos['totalOmitidos']}[/yellow]")
-                    try:
-                        omitidos += int(datos["totalOmitidos"])
-                    except ValueError:
-                        pass
+                if datos["success"] is True:
+                    if datos.get("totalRecibidos"):
+                        bitacora.info(f"{bucle_str}: Total recibidos: {datos['totalRecibidos']}")
+                        try:
+                            recibidos += int(datos["totalRecibidos"])
+                        except ValueError:
+                            pass
+                    if datos.get("totalInsertados"):
+                        bitacora.info(f"{bucle_str}: Total insertados: {datos['totalInsertados']}")
+                        try:
+                            insertados += int(datos["totalInsertados"])
+                        except ValueError:
+                            pass
+                    if datos.get("totalOmitidos"):
+                        bitacora.info(f"{bucle_str}: Total omitidos: {datos['totalOmitidos']}")
+                        try:
+                            omitidos += int(datos["totalOmitidos"])
+                        except ValueError:
+                            pass
 
-                # Procesar errores
-                expedientes_omitidos = []
-                if datos.get("errores"):
-                    for error in datos["errores"]:
-                        bitacora.error(f"Error al enviar digitalización: {error}")
-                        console.print(f"Error: [red]Error al enviar digitalización: {error}[/red]")
-                        # Por ejemplo, un error es "Expediente no encontrado: SLT-J2-MER 456/2024"
-                        # Extraer el 00000/2024 con una expresión regular
-                        expediente_omitido = re.search(r"\d+/\d+", error)
-                        if expediente_omitido:
-                            expedientes_omitidos.append(expediente_omitido.group())
+                    # Procesar errores
+                    expedientes_omitidos = []
+                    if datos.get("errores"):
+                        for error in datos["errores"]:
+                            bitacora.error(f"{bucle_str}: Error al enviar: {error}")
+                            # Por ejemplo, un error es "Expediente no encontrado: SLT-J2-MER 456/2024"
+                            # Extraer el 00000/2024 con una expresión regular
+                            expediente_omitido = re.search(r"\d+/\d+", error)
+                            if expediente_omitido:
+                                expedientes_omitidos.append(expediente_omitido.group())
 
-                # Guardar en la bitácora los resultados de este paquete
-                db.add(
-                    DgtPlataformaEndpointBitacora(
-                        dgt_plataforma_endpoint_id=plataforma.dgt_plataforma_endpoint_id,
-                        payload=payload,
-                        respuesta_codigo=respuesta.status_code,
-                        respuesta_exitosa=True,
-                        respuesta_mensaje=datos.get("message", "Sin mensaje"),
-                        respuesta_datos=datos,
+                    # Guardar en la bitácora los resultados de este paquete
+                    db.add(
+                        DgtPlataformaEndpointBitacora(
+                            dgt_plataforma_endpoint_id=plataforma.dgt_plataforma_endpoint_id,
+                            payload=payload,
+                            respuesta_codigo=respuesta.status_code,
+                            respuesta_exitosa=True,
+                            respuesta_mensaje=datos.get("message", "Sin mensaje"),
+                            respuesta_datos=datos,
+                        )
                     )
-                )
 
-                # Actualizar la columna entregado, con excepción de los expedientes omitidos
-                ahora = datetime.now(tz=TZ)
-                for dgt_digitalizacion in dgt_digitalizaciones:
-                    if dgt_digitalizacion.expediente in expediente_omitido:
-                        bitacora.warning(f"Expediente omitido: {dgt_digitalizacion.expediente}")
-                        continue
-                    dgt_digitalizacion.entregado = ahora
-                    db.add(dgt_digitalizacion)
+                    # Actualizar la columna entregado, con excepción de los expedientes omitidos
+                    ahora = datetime.now(tz=TZ)
+                    for dgt_digitalizacion in dgt_digitalizaciones:
+                        if dgt_digitalizacion.expediente in expediente_omitido:
+                            bitacora.warning(f"{bucle_str}: Expediente omitido: {dgt_digitalizacion.expediente}")
+                            continue
+                        dgt_digitalizacion.entregado = ahora
+                        db.add(dgt_digitalizacion)
 
-                # Aplicar cambios en la base de datos
-                db.commit()
+                    # Aplicar cambios en la base de datos
+                    db.commit()
 
             # Incrementar el offset, el contador de procesados y avanzar la barra de progreso
             offset += limit
             enviados += len(digitalizaciones)
-            progress.update(task, advance=enviados)
+            progress.update(task, advance=len(digitalizaciones))
 
     # Mensajes finales
     if enviados > 0:
