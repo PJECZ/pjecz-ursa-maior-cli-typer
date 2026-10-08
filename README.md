@@ -128,3 +128,9 @@ Copiar de entregas a digitalizaciones
 ```bash
 cli dgt-entregas copiar --probar
 ```
+
+Probar el envío de las digitalizaciones a la Plataforma
+
+```bash
+cli dgt-digitalizaciones enviar --probar
+```

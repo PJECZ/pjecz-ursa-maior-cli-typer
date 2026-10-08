@@ -397,6 +397,7 @@ def _copiar_dgt_ruta(
     # TODO: Optimizar por ultimo_evento_creado que sea reciente
     stmt = (
         select(
+            DgtEntrega.id,
             DgtEntrega.autoridad_id,
             DgtEntrega.archivo_nombre,
             DgtEntrega.archivo_url,
@@ -564,9 +565,11 @@ def _copiar_dgt_ruta(
                     )
                 )
 
-                # Recordar en DgtEntrega que ya fue copiado
-                dgt_entrega.archivo_uuid = archivo_uuid
-                db.add(dgt_entrega)
+                # Actualizar en DgtEntrega con el UUID para marcar como copiado
+                stmt = select(DgtEntrega).filter_by(id=dgt_entrega.id)
+                actualizar_dgt_entrega = db.execute(stmt).scalar_one()
+                actualizar_dgt_entrega.archivo_uuid = archivo_uuid
+                db.add(actualizar_dgt_entrega)
 
                 # Guardar por cada archivo para que el depósito y la base de datos no se desincronicen
                 db.commit()
