@@ -107,6 +107,7 @@ def _obtener_dgt_ruta(
     dgt_deposito: DgtDeposito,
     autoridad: Autoridad,
     bitacora: logging.Logger,
+    probar: bool = False,
 ):
     """Rastrear el depósito e insertar o actualizar registros en DgtEntrega de una ruta"""
     bitacora.info(f"Obteniendo entregas de {dgt_ruta.clave}...")
@@ -174,44 +175,44 @@ def _obtener_dgt_ruta(
                         .where(VspDigitalizacion.descripcion == desc)
                     ).scalar_one_or_none()
 
-                # Insertar
-                dgt_entrega = DgtEntrega(
-                    autoridad_id=autoridad.id,
-                    dgt_ruta_id=dgt_ruta.id,
-                    archivo_nombre=archivo_nombre,
-                    archivo_url=archivo_url,
-                    archivo_public_url=archivo_public_url,
-                    archivo_md5=archivo_md5,
-                    archivo_crc32c=archivo_crc32c,
-                    archivo_actualizado=archivo_actualizado,
-                    archivo_tamano=archivo_tamano,
-                    expediente=f"{num}/{anio}" if num and anio else None,
-                    expediente_anio=anio if anio else None,
-                    expediente_num=num if num else None,
-                    descripcion=desc if desc else None,
-                    ultimo_evento="CREADO",
-                    ultimo_evento_creado=archivo_actualizado,
-                    es_anomalo=bool(not num or not anio),
-                )
-                if vsp_digitalizacion:
-                    dgt_entrega.archivo_uuid = vsp_digitalizacion.archivo_uuid
-                db.add(dgt_entrega)
-                db.flush()
-
-                # Agregar a la bitácora
-                db.add(
-                    DgtEntregaBitacora(
-                        dgt_entrega_id=dgt_entrega.id,
+                if probar is False:
+                    # Insertar
+                    dgt_entrega = DgtEntrega(
+                        autoridad_id=autoridad.id,
+                        dgt_ruta_id=dgt_ruta.id,
+                        archivo_nombre=archivo_nombre,
                         archivo_url=archivo_url,
-                        archivo_md5_old="",
-                        archivo_md5_new=archivo_md5,
-                        archivo_crc32c_old="",
-                        archivo_crc32c_new=archivo_crc32c,
+                        archivo_public_url=archivo_public_url,
+                        archivo_md5=archivo_md5,
+                        archivo_crc32c=archivo_crc32c,
                         archivo_actualizado=archivo_actualizado,
                         archivo_tamano=archivo_tamano,
-                        evento="CREADO",
+                        expediente=f"{num}/{anio}" if num and anio else None,
+                        expediente_anio=anio if anio else None,
+                        expediente_num=num if num else None,
+                        descripcion=desc if desc else None,
+                        ultimo_evento="CREADO",
+                        ultimo_evento_creado=archivo_actualizado,
+                        es_anomalo=bool(not num or not anio),
                     )
-                )
+                    if vsp_digitalizacion:
+                        dgt_entrega.archivo_uuid = vsp_digitalizacion.archivo_uuid
+                    db.add(dgt_entrega)
+                    db.flush()
+                    # Agregar a la bitácora
+                    db.add(
+                        DgtEntregaBitacora(
+                            dgt_entrega_id=dgt_entrega.id,
+                            archivo_url=archivo_url,
+                            archivo_md5_old="",
+                            archivo_md5_new=archivo_md5,
+                            archivo_crc32c_old="",
+                            archivo_crc32c_new=archivo_crc32c,
+                            archivo_actualizado=archivo_actualizado,
+                            archivo_tamano=archivo_tamano,
+                            evento="CREADO",
+                        )
+                    )
                 creados += 1
 
                 # Si no es válido el número o el año del expediente, se considera una anomalía
@@ -224,7 +225,8 @@ def _obtener_dgt_ruta(
             # B.1) Ya existe y tiene es_anomalo en None, vamos a actualizarlo a False si sí es válido el número y año
             if dgt_entrega.es_anomalo is None:
                 dgt_entrega.es_anomalo = bool(not num or not anio)
-                db.add(dgt_entrega)
+                if probar is False:
+                    db.add(dgt_entrega)
                 if dgt_entrega.es_anomalo:
                     anomalias.append(archivo_url)
                 else:
@@ -245,20 +247,21 @@ def _obtener_dgt_ruta(
             dgt_entrega.archivo_tamano = archivo_tamano
             dgt_entrega.ultimo_evento = "MODIFICADO"
             dgt_entrega.ultimo_evento_creado = archivo_actualizado
-            db.add(dgt_entrega)
-            db.add(
-                DgtEntregaBitacora(
-                    dgt_entrega_id=dgt_entrega.id,
-                    archivo_url=archivo_url,
-                    archivo_md5_old=archivo_md5_old,
-                    archivo_md5_new=archivo_md5,
-                    archivo_crc32c_old=archivo_crc32c_old,
-                    archivo_crc32c_new=archivo_crc32c,
-                    archivo_actualizado=archivo_actualizado,
-                    archivo_tamano=archivo_tamano,
-                    evento="MODIFICADO",
+            if probar is False:
+                db.add(dgt_entrega)
+                db.add(
+                    DgtEntregaBitacora(
+                        dgt_entrega_id=dgt_entrega.id,
+                        archivo_url=archivo_url,
+                        archivo_md5_old=archivo_md5_old,
+                        archivo_md5_new=archivo_md5,
+                        archivo_crc32c_old=archivo_crc32c_old,
+                        archivo_crc32c_new=archivo_crc32c,
+                        archivo_actualizado=archivo_actualizado,
+                        archivo_tamano=archivo_tamano,
+                        evento="MODIFICADO",
+                    )
                 )
-            )
             modificados.append(archivo_url)
 
     # D) No están en el depósito, dar de baja y agregar bitácora de ELIMINADO
@@ -270,49 +273,55 @@ def _obtener_dgt_ruta(
     for dgt_entrega in dgt_entregas_previas:
         if dgt_entrega.archivo_url in archivo_urls_en_deposito:
             continue
-        dgt_entrega.ultimo_evento = "ELIMINADO"
-        dgt_entrega.estatus = "B"
-        db.add(dgt_entrega)
-        db.add(
-            DgtEntregaBitacora(
-                dgt_entrega_id=dgt_entrega.id,
-                archivo_url=dgt_entrega.archivo_url,
-                archivo_md5_old=dgt_entrega.archivo_md5,
-                archivo_md5_new="",
-                archivo_crc32c_old=dgt_entrega.archivo_crc32c,
-                archivo_crc32c_new="",
-                archivo_actualizado=dgt_entrega.archivo_actualizado,
-                archivo_tamano=dgt_entrega.archivo_tamano,
-                evento="ELIMINADO",
+        if probar is False:
+            dgt_entrega.ultimo_evento = "ELIMINADO"
+            dgt_entrega.estatus = "B"
+            db.add(dgt_entrega)
+            db.add(
+                DgtEntregaBitacora(
+                    dgt_entrega_id=dgt_entrega.id,
+                    archivo_url=dgt_entrega.archivo_url,
+                    archivo_md5_old=dgt_entrega.archivo_md5,
+                    archivo_md5_new="",
+                    archivo_crc32c_old=dgt_entrega.archivo_crc32c,
+                    archivo_crc32c_new="",
+                    archivo_actualizado=dgt_entrega.archivo_actualizado,
+                    archivo_tamano=dgt_entrega.archivo_tamano,
+                    evento="ELIMINADO",
+                )
             )
-        )
         eliminados.append(archivo_url)
 
-    db.commit()
+    if probar is False:
+        db.commit()
 
     # Mensajes finales
+    prueba = "(PRUEBA) " if probar else ""
     if len(anomalias) > 0:
         for anomalia in anomalias:
-            bitacora.warning(f"Anomalía: {anomalia}")
-            console.print(f"Anomalía: [cyan]{anomalia}[/cyan]")
+            bitacora.warning(f"{prueba}Anomalía: {anomalia}")
+            console.print(f"{prueba}Anomalía: [cyan]{anomalia}[/cyan]")
     if len(modificados) > 0:
         for modificado in modificados:
-            bitacora.warning(f"Modificado: {modificado}")
-            console.print(f"Modificado: [yellow]{modificado}[/yellow]")
+            bitacora.warning(f"{prueba}Modificado: {modificado}")
+            console.print(f"{prueba}Modificado: [yellow]{modificado}[/yellow]")
     if len(eliminados) > 0:
         for eliminado in eliminados:
-            bitacora.warning(f"Eliminado: {eliminado}")
-            console.print(f"Eliminado: [red]{eliminado}[/red]")
+            bitacora.warning(f"{prueba}Eliminado: {eliminado}")
+            console.print(f"{prueba}Eliminado: [red]{eliminado}[/red]")
     if creados > 0:
-        bitacora.info(f"Creados: {creados}")
-        console.print(f"Creados: [green]{creados}[/green]")
+        bitacora.info(f"{prueba}Creados: {creados}")
+        console.print(f"{prueba}Creados: [green]{creados}[/green]")
     if omitidos > 0:
-        bitacora.info(f"Omitidos: {omitidos}")
-        console.print(f"Omitidos: [gray]{omitidos}[/gray]")
+        bitacora.info(f"{prueba}Omitidos: {omitidos}")
+        console.print(f"{prueba}Omitidos: [gray]{omitidos}[/gray]")
 
 
 @app.command()
-def obtener(dgt_ruta_clave: str = ""):
+def obtener(
+    dgt_ruta_clave: str = "",
+    probar: Annotated[bool, Option("--probar", "-p", help="Probar sin guardar en la base de datos")] = False,
+):
     """Insertar o actualizar registros en DgtEntrega rastreando el depósito
 
     Si no se indica la clave de la DgtRuta, se procesan todas las DgtRutas con propósito ENTREGAS y estatus "A".
@@ -351,7 +360,7 @@ def obtener(dgt_ruta_clave: str = ""):
 
     cliente = storage.Client()
     for dgt_ruta, dgt_deposito, autoridad in renglones:
-        _obtener_dgt_ruta(db, console, cliente, dgt_ruta, dgt_deposito, autoridad, bitacora)
+        _obtener_dgt_ruta(db, console, cliente, dgt_ruta, dgt_deposito, autoridad, bitacora, probar)
 
 
 def _buscar_dgt_ruta_destino(db, dgt_ruta_origen: DgtRuta) -> list[DgtRuta]:
@@ -582,19 +591,16 @@ def _copiar_dgt_ruta(
             copiados += 1
 
     # Mensajes finales
+    prueba = "(PRUEBA) " if probar else ""
     if copiados > 0:
-        if probar:
-            bitacora.info(f"(PRUEBA) Se pueden copiar: {copiados}")
-            console.print(f"(PRUEBA) Se pueden copiar: [green]{copiados}[/green]")
-        else:
-            bitacora.info(f"Copiados: {copiados}")
-            console.print(f"Copiados: [green]{copiados}[/green]")
+        bitacora.info(f"{prueba}Copiados: {copiados}")
+        console.print(f"{prueba}Copiados: [green]{copiados}[/green]")
     if omitidos > 0:
-        bitacora.info(f"Omitidos: {omitidos}")
-        console.print(f"Omitidos: [blue]{omitidos}[/blue]")
+        bitacora.info(f"{prueba}Omitidos: {omitidos}")
+        console.print(f"{prueba}Omitidos: [blue]{omitidos}[/blue]")
     if no_encontrados > 0:
-        bitacora.info(f"No encontrados en el depósito de origen: {no_encontrados}")
-        console.print(f"No encontrados en el depósito de origen: [red]{no_encontrados}[/red]")
+        bitacora.info(f"{prueba}No encontrados en el depósito de origen: {no_encontrados}")
+        console.print(f"{prueba}No encontrados en el depósito de origen: [red]{no_encontrados}[/red]")
 
 
 @app.command()
