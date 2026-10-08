@@ -165,10 +165,8 @@ def _obtener_dgt_ruta(
             archivo_uuid = UUID(archivo_uuid_str)
 
             # Buscar en dgt_digitalizaciones ese UUID
-            dgt_digitalizacion = db.execute(
-                select(DgtDigitalizacion)
-                .where(DgtDigitalizacion.id == archivo_uuid)
-            ).scalar_one_or_none()
+            stmt = select(DgtDigitalizacion).filter_by(id=archivo_uuid)
+            dgt_digitalizacion = db.execute(stmt).scalar_one_or_none()
 
             # A) No existe un registro en dgt_digitalizaciones
             if dgt_digitalizacion is None:
@@ -274,6 +272,7 @@ def _obtener_dgt_ruta(
                 if probar is False:
                     dgt_digitalizacion.es_anomalo = False
                     db.add(dgt_digitalizacion)
+                    db.flush()
                 continue
 
             # B.2) Ya existe en dgt_digitalizaciones, si coincide el md5 y crc32c
@@ -293,6 +292,7 @@ def _obtener_dgt_ruta(
                 dgt_digitalizacion.ultimo_evento = "MODIFICADO"
                 dgt_digitalizacion.ultimo_evento_creado = archivo_actualizado
                 db.add(dgt_digitalizacion)
+                db.flush()
                 db.add(
                     DgtDigitalizacionBitacora(
                         dgt_digitalizacion_id=dgt_digitalizacion.id,
@@ -309,12 +309,12 @@ def _obtener_dgt_ruta(
             modificados.append(archivo_url)
 
     # D) No están en el depósito, cambiar estatus a "B" y el evento a ELIMINADO
-    dgt_digitalizaciones_previas = db.execute(
+    stmt = (
         select(DgtDigitalizacion)
         .where(DgtDigitalizacion.dgt_ruta_id == dgt_ruta.id)
         .where(DgtDigitalizacion.estatus == "A")
-    ).scalars()
-    for dgt_digitalizacion in dgt_digitalizaciones_previas:
+    )
+    for dgt_digitalizacion in db.scalars(stmt).all():
         if dgt_digitalizacion.archivo_url in archivo_urls_en_deposito:
             continue
         if probar is False:
@@ -334,6 +334,7 @@ def _obtener_dgt_ruta(
                     evento="ELIMINADO",
                 )
             )
+            db.flush()
         eliminados.append(archivo_url)
 
     # Guardar cambios en la base de datos
@@ -541,7 +542,6 @@ def _enviar_dgt_ruta(
                             respuesta_datos=datos,
                         )
                     )
-                    db.commit()
 
                 # Procesar la respuesta
                 if datos["success"] is True:

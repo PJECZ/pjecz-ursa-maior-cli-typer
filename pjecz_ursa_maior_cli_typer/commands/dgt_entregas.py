@@ -155,10 +155,8 @@ def _obtener_dgt_ruta(
             num, anio, desc = parsear_num_anio_desc(archivo_nombre.split(".")[0])
 
             # Buscar en dgt_entregas
-            dgt_entrega = db.execute(
-                select(DgtEntrega)
-                .where(DgtEntrega.archivo_url == archivo_url)
-            ).scalar_one_or_none()
+            stmt = select(DgtEntrega).where(DgtEntrega.archivo_url == archivo_url)
+            dgt_entrega = db.execute(stmt).scalar_one_or_none()
 
             # A) No existe, crear un nuevo DgtEntrega
             if dgt_entrega is None:
@@ -167,13 +165,14 @@ def _obtener_dgt_ruta(
                 # Solo se copian los EXHORTOS, por eso solo consultamos ese tipo
                 vsp_digitalizacion = None
                 if num and anio and dgt_ruta.dgt_tipo.clave == DGT_TIPO_CLAVE:
-                    vsp_digitalizacion = db.execute(
+                    stmt = (
                         select(VspDigitalizacion)
                         .where(VspDigitalizacion.autoridad_id == autoridad.id)
                         .where(VspDigitalizacion.expediente_anio == anio)
                         .where(VspDigitalizacion.expediente_num == num)
                         .where(VspDigitalizacion.descripcion == desc)
-                    ).scalar_one_or_none()
+                    )
+                    vsp_digitalizacion = db.execute(stmt).scalar_one_or_none()
 
                 if probar is False:
                     # Insertar
@@ -227,6 +226,7 @@ def _obtener_dgt_ruta(
                 dgt_entrega.es_anomalo = bool(not num or not anio)
                 if probar is False:
                     db.add(dgt_entrega)
+                    db.flush()
                 if dgt_entrega.es_anomalo:
                     anomalias.append(archivo_url)
                 else:
@@ -583,6 +583,7 @@ def _copiar_dgt_ruta(
                 actualizar_dgt_entrega = db.execute(stmt).scalar_one()
                 actualizar_dgt_entrega.archivo_uuid = archivo_uuid
                 db.add(actualizar_dgt_entrega)
+                db.flush()
 
                 # Guardar por cada archivo para que el depósito y la base de datos no se desincronicen
                 db.commit()
