@@ -458,12 +458,12 @@ def _copiar_dgt_ruta(
                     se_va_a_copiar = False
                     # Pero SÍ se va a tomar el último evento, posiblemente haya sido ELIMINADO
                     ultimo_evento = posible_dgt_digitalizacion.ultimo_evento
-                    bitacora.info(f"Actualizar con {ultimo_evento} para {DgtDigitalizacion.archivo_url}")
+                    bitacora.info(f"Actualizar con {ultimo_evento} para {posible_dgt_digitalizacion.archivo_url}")
                 else:
                     # NO coinciden el CRC32C y el MD5, entonces se va a sobreescribir
                     se_va_a_copiar = True
                     ultimo_evento = posible_dgt_digitalizacion.ultimo_evento
-                    bitacora.info(f"Sobreescribir con {ultimo_evento} para {DgtDigitalizacion.archivo_url}")
+                    bitacora.info(f"Sobreescribir con {ultimo_evento} para {posible_dgt_digitalizacion.archivo_url}")
             else:
                 # No existe DgtDigitalizacion
                 archivo_uuid = uuid4()  # Tal sea nuevo
@@ -475,7 +475,7 @@ def _copiar_dgt_ruta(
                 if dgt_entrega.ultimo_evento in ("CREADO", "MODIFICADO"):
                     se_va_a_copiar = True
                     ultimo_evento = "CREADO"
-                    bitacora.info(f"Copiar con {ultimo_evento} desde {DgtEntrega.archivo_url}")
+                    bitacora.info(f"Copiar con {ultimo_evento} desde {dgt_entrega.archivo_url}")
                 else:
                     # DgtEntrega debe estar ELIMINADO, entonces se omite
                     omitidos += 1
