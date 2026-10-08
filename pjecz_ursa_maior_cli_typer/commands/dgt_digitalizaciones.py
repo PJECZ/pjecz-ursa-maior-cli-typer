@@ -380,7 +380,7 @@ def obtener(dgt_ruta_clave: str = ""):
     console = Console()
     db = get_database()
 
-    consulta = (
+    stmt = (
         select(DgtRuta, DgtDeposito, Autoridad)
         .join(DgtDeposito)
         .join(Autoridad, Autoridad.clave == DgtRuta.autoridad_clave)
@@ -389,14 +389,14 @@ def obtener(dgt_ruta_clave: str = ""):
 
     dgt_ruta_clave = safe_clave(dgt_ruta_clave, max_len=64)
     if dgt_ruta_clave != "":
-        consulta = consulta.where(DgtRuta.clave == dgt_ruta_clave).where(DgtRuta.estatus == "A")
-        renglones = db.execute(consulta).all()
+        stmt = stmt.where(DgtRuta.clave == dgt_ruta_clave).where(DgtRuta.estatus == "A")
+        renglones = db.execute(stmt).all()
         if not renglones:
             console.print(f"[red]DgtRuta con clave {dgt_ruta_clave} no encontrada o eliminada[/red]")
             raise Exit(code=1)
     else:
-        consulta = consulta.where(DgtRuta.estatus == "A")
-        renglones = db.execute(consulta).all()
+        stmt = stmt.where(DgtRuta.estatus == "A")
+        renglones = db.execute(stmt).all()
         if not renglones:
             console.print("[yellow]No hay DgtRutas activas[/yellow]")
             raise Exit(code=1)
@@ -406,14 +406,14 @@ def obtener(dgt_ruta_clave: str = ""):
         _obtener_dgt_ruta(db, console, cliente, dgt_ruta, dgt_deposito, autoridad, bitacora)
 
 
-def _entregar_dgt_ruta(
+def _enviar_dgt_ruta(
     db,
     console: Console,
     dgt_ruta: DgtRuta,
     bitacora: logging.Logger,
     probar: bool = False,
 ):
-    """Entregar las nuevas DgtDigitalizacion de una DgtRuta a la DgtPlataforma"""
+    """Enviar las DgtDigitalizacion de una DgtRuta a la DgtPlataforma"""
     deposito_origen = dgt_ruta.dgt_deposito.clave.lower()
     bitacora.info(f"Entregando digitalizaciones de {deposito_origen}/{dgt_ruta.directorio}...")
     console.print(f"Entregando digitalizaciones de [cyan]{deposito_origen}/{dgt_ruta.directorio}[/cyan]...")
@@ -438,8 +438,8 @@ def _entregar_dgt_ruta(
     # Determinar el total para la barra de progreso, salir si no hay digitalizaciones
     digitalizaciones_total = db.execute(select(func.count()).select_from(digitalizaciones_stmt.subquery())).scalar()
     if digitalizaciones_total == 0:
-        bitacora.warning(f"No hay digitalizaciones para entregar en {deposito_origen}/{dgt_ruta.directorio}")
-        console.print(f"[yellow]No hay digitalizaciones para entregar en {deposito_origen}/{dgt_ruta.directorio}[/yellow]")
+        bitacora.warning(f"No hay digitalizaciones para enviar en {deposito_origen}/{dgt_ruta.directorio}")
+        console.print(f"[yellow]No hay digitalizaciones para enviar en {deposito_origen}/{dgt_ruta.directorio}[/yellow]")
         return
 
     # Consultar la plataforma (API-key y ruta) a partir de autoridad_clave de la ruta
@@ -464,7 +464,7 @@ def _entregar_dgt_ruta(
 
     # Barra de progreso para entregar las digitalizaciones
     with Progress() as progress:
-        task = progress.add_task("Entregando digitalizaciones...", total=digitalizaciones_total)
+        task = progress.add_task("Enviando digitalizaciones...", total=digitalizaciones_total)
         digitalizaciones = []  # Inicializar el listado para el payload
 
         # Consultar en paquetes de LIMIT registros
@@ -516,8 +516,8 @@ def _entregar_dgt_ruta(
 
             # Si el success es False, guadar en la bitácora y pasar al siguiente paquete
             if datos["success"] is False:
-                bitacora.error(f"Error al entregar digitalizaciones: {datos.get('message', 'Sin mensaje')}")
-                console.print(f"Error: [red]Error al entregar digitalizaciones: {datos.get('message', 'Sin mensaje')}[/red]")
+                bitacora.error(f"Error al enviar digitalizaciones: {datos.get('message', 'Sin mensaje')}")
+                console.print(f"Error: [red]Error al enviar digitalizaciones: {datos.get('message', 'Sin mensaje')}[/red]")
                 db.add(
                     DgtPlataformaEndpointBitacora(
                         dgt_plataforma_endpoint_id=plataforma.dgt_plataforma_endpoint_id,
@@ -558,8 +558,8 @@ def _entregar_dgt_ruta(
             expedientes_omitidos = []
             if datos.get("errores"):
                 for error in datos["errores"]:
-                    bitacora.error(f"Error al entregar digitalización: {error}")
-                    console.print(f"Error: [red]Error al entregar digitalización: {error}[/red]")
+                    bitacora.error(f"Error al enviar digitalización: {error}")
+                    console.print(f"Error: [red]Error al enviar digitalización: {error}[/red]")
                     # Por ejemplo, un error es "Expediente no encontrado: SLT-J2-MER 456/2024"
                     # Extraer el 00000/2024 con una expresión regular
                     expediente_omitido = re.search(r"\d+/\d+", error)
@@ -626,11 +626,11 @@ def _entregar_dgt_ruta(
 
 
 @app.command()
-def entregar(
+def enviar(
     dgt_ruta_clave: str = "",
     probar: Annotated[bool, Option("--probar", "-p", help="Probar sin guardar en la base de datos")] = False,
 ):
-    """Entregar las nuevas DgtDigitalizacion a la API de la DgtPlataforma
+    """Enviar las DgtDigitalizacion a la API de la DgtPlataforma
 
     Si se especifica la clave de la DgtRuta, se procesará sólo esa ruta.
     - Debe tener propósito DIGITALIZACIONES
@@ -650,8 +650,8 @@ def entregar(
     console = Console()
     db = get_database()
 
-    # Consultar las DgtRutas con propósito ESTREGAR_PROPOSITO y DGT_TIPO_CLAVE
-    consulta = (
+    # Consultar las DgtRutas con propósito DGT_DEPOSITO_PROPOSITO y DGT_TIPO_CLAVE
+    stmt = (
         select(DgtRuta)
         .join(DgtDeposito)
         .join(DgtTipo)
@@ -663,16 +663,17 @@ def entregar(
     # Si viene dgt_ruta_clave
     dgt_ruta_clave = safe_clave(dgt_ruta_clave, max_len=64)
     if dgt_ruta_clave != "":
-        dgt_rutas = db.execute(consulta.where(DgtRuta.clave == dgt_ruta_clave)).scalars().all()
+        stmt = stmt.where(DgtRuta.clave == dgt_ruta_clave)
+        dgt_rutas = db.scalars(stmt).all()
         if not dgt_rutas:
             console.print(f"[red]DgtRuta con clave {dgt_ruta_clave} no encontrada, eliminada o no es {DGT_DEPOSITO_PROPOSITO}[/red]")
             raise Exit(code=1)
     else:
-        dgt_rutas = db.execute(consulta).scalars().all()
+        dgt_rutas = db.scalars(stmt).all()
         if not dgt_rutas:
             console.print(f"[yellow]No hay DgtRutas con {DGT_DEPOSITO_PROPOSITO} y tipo {DGT_TIPO_CLAVE} activas[/yellow]")
             raise Exit(code=1)
 
     # Bucle por cada DgtRuta
     for dgt_ruta in dgt_rutas:
-        _entregar_dgt_ruta(db, console, dgt_ruta, bitacora, probar)
+        _enviar_dgt_ruta(db, console, dgt_ruta, bitacora, probar)

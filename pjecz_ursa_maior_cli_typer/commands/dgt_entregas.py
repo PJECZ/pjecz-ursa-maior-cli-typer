@@ -328,7 +328,7 @@ def obtener(dgt_ruta_clave: str = ""):
     console = Console()
     db = get_database()
 
-    consulta = (
+    stmt = (
         select(DgtRuta, DgtDeposito, Autoridad)
         .join(DgtDeposito)
         .join(Autoridad, Autoridad.clave == DgtRuta.autoridad_clave)
@@ -337,14 +337,14 @@ def obtener(dgt_ruta_clave: str = ""):
 
     dgt_ruta_clave = safe_clave(dgt_ruta_clave, max_len=64)
     if dgt_ruta_clave != "":
-        consulta = consulta.where(DgtRuta.clave == dgt_ruta_clave).where(DgtRuta.estatus == "A")
-        renglones = db.execute(consulta).all()
+        stmt = stmt.where(DgtRuta.clave == dgt_ruta_clave).where(DgtRuta.estatus == "A")
+        renglones = db.execute(stmt).all()
         if not renglones:
             console.print(f"[red]DgtRuta con clave {dgt_ruta_clave} no encontrada o eliminada[/red]")
             raise Exit(code=1)
     else:
-        consulta = consulta.where(DgtRuta.estatus == "A")
-        renglones = db.execute(consulta).all()
+        stmt = stmt.where(DgtRuta.estatus == "A")
+        renglones = db.execute(stmt).all()
         if not renglones:
             console.print("[yellow]No hay DgtRutas activas[/yellow]")
             raise Exit(code=1)
@@ -404,6 +404,7 @@ def _copiar_dgt_ruta(
             DgtEntrega.archivo_crc32c,
             DgtEntrega.archivo_uuid,
             DgtEntrega.ultimo_evento,
+            DgtEntrega.estatus,
         )
         .where(DgtEntrega.dgt_ruta_id == dgt_ruta_origen.id)
         .where(DgtEntrega.es_anomalo == False)
@@ -411,7 +412,7 @@ def _copiar_dgt_ruta(
     )
     total = db.execute(select(func.count()).select_from(stmt.subquery())).scalar()
 
-    # Barra de progreso para copiar los archivos
+    # Barra de progreso
     with Progress() as progress:
         task = progress.add_task("Copiando entregas a digitalizaciones...", total=total)
 
@@ -419,7 +420,7 @@ def _copiar_dgt_ruta(
         for dgt_entrega in db.execute(stmt).all():
             progress.update(task, advance=1)  # Avanzar la barra de progreso
 
-            # Consultar posible DgtDigitalizacion por el UUID
+            # Buscar posible DgtDigitalizacion por el UUID de DgtEntrega
             posible_dgt_digitalizacion = None
             if dgt_entrega.archivo_uuid:
                 posible_dgt_digitalizacion = db.execute(
@@ -427,77 +428,125 @@ def _copiar_dgt_ruta(
                         DgtDigitalizacion.id.label("archivo_uuid"),
                         DgtDigitalizacion.archivo_md5,
                         DgtDigitalizacion.archivo_crc32c,
+                        DgtDigitalizacion.archivo_url,
                         DgtDigitalizacion.ultimo_evento,
+                        DgtDigitalizacion.estatus,
                     )
                     .where(DgtDigitalizacion.id == dgt_entrega.archivo_uuid)
                 ).first()
 
-            # ¿Existe la digitalización?...
+            # ¿Existe su DgtDigitalizacion?...
+            archivo_uuid = None
             se_va_a_copiar = False
-            ultimo_evento = "CREADO"
+            ultimo_evento = ""
             if posible_dgt_digitalizacion:
-                # Sí existe, entonces comparar CRC32C y MD5...
+                # Sí existe DgtDigitalizacion
+                archivo_uuid = dgt_entrega.archivo_uuid  # Importante conservar el UUID
+                # Omitir si está eliminada
+                if posible_dgt_digitalizacion.estatus != "A":
+                    omitidos += 1
+                    continue
+                # Comparar elCRC32C y el MD5
                 if posible_dgt_digitalizacion.archivo_md5 == dgt_entrega.archivo_md5 and posible_dgt_digitalizacion.archivo_crc32c == dgt_entrega.archivo_crc32c:
-                    # Si NO cambia el último evento, se omite
+                    # Son iguales el CRC32C y el MD5
+                    # Si el último evento es igual, se omite
                     if posible_dgt_digitalizacion.ultimo_evento == dgt_entrega.ultimo_evento:
                         omitidos += 1
                         continue
-                    # No se va a copiar, pero el último evento es diferente
+                    # El último evento es diferente
+                    # NO se va a copiar
                     se_va_a_copiar = False
+                    # Pero SÍ se va a tomar el último evento, posiblemente haya sido ELIMINADO
                     ultimo_evento = posible_dgt_digitalizacion.ultimo_evento
+                    bitacora.info(f"Actualizar con {ultimo_evento} para {DgtDigitalizacion.archivo_url}")
                 else:
-                    # NO coinciden CRC32C y MD5, entonces ha sido MODIFICADO y se va a copiar
+                    # NO coinciden el CRC32C y el MD5, entonces se va a sobreescribir
                     se_va_a_copiar = True
-                    ultimo_evento = "MODIFICADO"
-            elif dgt_entrega.ultimo_evento in ("CREADO", "MODIFICADO"):
-                # No existe la digitalización, pero la entrega es CREADO o MODIFICADO, entonces se va a copiar
-                se_va_a_copiar = True
-                ultimo_evento = "CREADO"
+                    ultimo_evento = posible_dgt_digitalizacion.ultimo_evento
+                    bitacora.info(f"Sobreescribir con {ultimo_evento} para {DgtDigitalizacion.archivo_url}")
+            else:
+                # No existe DgtDigitalizacion
+                archivo_uuid = uuid4()  # Tal sea nuevo
+                # Omitir si está eliminada
+                if dgt_entrega.estatus != "A":
+                    omitidos += 1
+                    continue
+                # Si fue es CREADO o MODIFICADO, entonces se va a copiar
+                if dgt_entrega.ultimo_evento in ("CREADO", "MODIFICADO"):
+                    se_va_a_copiar = True
+                    ultimo_evento = "CREADO"
+                    bitacora.info(f"Copiar con {ultimo_evento} desde {DgtEntrega.archivo_url}")
+                else:
+                    # DgtEntrega debe estar ELIMINADO, entonces se omite
+                    omitidos += 1
+                    continue
 
             # Definir el nombre del archivo de destino con un UUID, conservando la extensión
-            archivo_uuid = uuid4()
             extension = dgt_entrega.archivo_nombre.rsplit(".", maxsplit=1)[-1].lower() if "." in dgt_entrega.archivo_nombre else ""
             archivo_nombre = f"{archivo_uuid}.{extension}" if extension else str(archivo_uuid)
             blob_destino_nombre = f"{dgt_ruta_destino.directorio}/{archivo_nombre}"
 
             # Copiar el archivo
-            if probar is False and se_va_a_copiar is True:
-                blob_origen_nombre = dgt_entrega.archivo_url.removeprefix(f"gs://{deposito_origen}/")
-                try:
-                    blob = bucket_origen.copy_blob(bucket_origen.blob(blob_origen_nombre), bucket_destino, blob_destino_nombre)
-                except NotFound:
-                    no_encontrados += 1
-                    continue
+            if probar is False:
+                # No se va a copiar, entonces si ya hay DgtDigitalizacion estas columnas no cambian
+                if se_va_a_copiar is False and posible_dgt_digitalizacion:
+                    archivo_url = posible_dgt_digitalizacion.archivo_url
+                    archivo_md5 = posible_dgt_digitalizacion.archivo_md5
+                    archivo_crc32c = posible_dgt_digitalizacion.archivo_crc32c
+                    archivo_actualizado = posible_dgt_digitalizacion.archivo_actualizado
+                    archivo_tamano = posible_dgt_digitalizacion.archivo_tamano
 
-                # Obtener información del archivo copiado
-                archivo_url = f"gs://{deposito_destino}/{blob.name}"
-                archivo_md5 = base64.b64decode(blob.md5_hash).hex() if blob.md5_hash else ""
-                archivo_crc32c = base64.b64decode(blob.crc32c).hex() if blob.crc32c else ""
-                archivo_actualizado = blob.updated
-                archivo_tamano = blob.size or 0
+                # Si se va a copiar
+                if se_va_a_copiar is True:
+                    # Copiar entre depósitos de Google Cloud Storage
+                    blob_origen_nombre = dgt_entrega.archivo_url.removeprefix(f"gs://{deposito_origen}/")
+                    try:
+                        blob = bucket_origen.copy_blob(bucket_origen.blob(blob_origen_nombre), bucket_destino, blob_destino_nombre)
+                    except NotFound:
+                        no_encontrados += 1
+                        continue
+                    # Obtener información del archivo copiado
+                    archivo_url = f"gs://{deposito_destino}/{blob.name}"
+                    archivo_md5 = base64.b64decode(blob.md5_hash).hex() if blob.md5_hash else ""
+                    archivo_crc32c = base64.b64decode(blob.crc32c).hex() if blob.crc32c else ""
+                    archivo_actualizado = blob.updated
+                    archivo_tamano = blob.size or 0
 
-                # Insertar DgtDigitalizacion, su ID es el mismo UUID del nombre del archivo
-                dgt_digitalizacion = DgtDigitalizacion(
-                    id=archivo_uuid,
-                    autoridad_id=dgt_entrega.autoridad_id,
-                    dgt_ruta_id=dgt_ruta_destino.id,
-                    archivo_nombre=archivo_nombre,
-                    archivo_url=archivo_url,
-                    archivo_public_url=blob.public_url,
-                    archivo_md5=archivo_md5,
-                    archivo_crc32c=archivo_crc32c,
-                    archivo_actualizado=archivo_actualizado,
-                    archivo_tamano=archivo_tamano,
-                    expediente=dgt_entrega.expediente,
-                    expediente_anio=dgt_entrega.expediente_anio,
-                    expediente_num=dgt_entrega.expediente_num,
-                    descripcion=dgt_entrega.descripcion,
-                    ultimo_evento=ultimo_evento,
-                    ultimo_evento_creado=archivo_actualizado,
-                    es_anomalo=False,
-                )
-                db.add(dgt_digitalizacion)
-                db.flush()
+                # Si ya tenemos la DgtDigitalizacion
+                if posible_dgt_digitalizacion:
+                    # Actualizar DgtDigitalizacion
+                    dgt_digitalizacion = posible_dgt_digitalizacion
+                    dgt_digitalizacion.archivo_md5 = archivo_md5
+                    dgt_digitalizacion.archivo_crc32c = archivo_crc32c
+                    dgt_digitalizacion.archivo_actualizado = archivo_actualizado
+                    dgt_digitalizacion.archivo_tamano = archivo_tamano
+                    dgt_digitalizacion.ultimo_evento = ultimo_evento
+                    dgt_digitalizacion.ultimo_evento_creado = archivo_actualizado
+                    db.add(dgt_digitalizacion)
+                    db.flush()
+                else:
+                    # Insertar DgtDigitalizacion, su ID es el UUID igual que archivo_uuid
+                    dgt_digitalizacion = DgtDigitalizacion(
+                        id=archivo_uuid,
+                        autoridad_id=dgt_entrega.autoridad_id,
+                        dgt_ruta_id=dgt_ruta_destino.id,
+                        archivo_nombre=archivo_nombre,
+                        archivo_url=archivo_url,
+                        archivo_public_url=blob.public_url,
+                        archivo_md5=archivo_md5,
+                        archivo_crc32c=archivo_crc32c,
+                        archivo_actualizado=archivo_actualizado,
+                        archivo_tamano=archivo_tamano,
+                        expediente=dgt_entrega.expediente,
+                        expediente_anio=dgt_entrega.expediente_anio,
+                        expediente_num=dgt_entrega.expediente_num,
+                        descripcion=dgt_entrega.descripcion,
+                        ultimo_evento=ultimo_evento,
+                        ultimo_evento_creado=archivo_actualizado,
+                        es_anomalo=False,
+                    )
+                    db.add(dgt_digitalizacion)
+                    db.flush()
 
                 # Agregar a la bitácora
                 db.add(
@@ -564,24 +613,25 @@ def copiar(
     db = get_database()
 
     # Consultar las DgtRutas cuyo propósito sea COPIAR_PROPOSITO_ORIGEN
-    consulta = (
+    stmt = (
         select(DgtRuta)
         .join(DgtDeposito)
         .where(DgtDeposito.proposito == COPIAR_PROPOSITO_ORIGEN)
         .where(DgtRuta.estatus == "A")
     )
     origen_dgt_ruta_clave = safe_clave(origen_dgt_ruta_clave, max_len=64)
+    dgt_rutas_origenes = []
     if origen_dgt_ruta_clave != "":
-        console.print(f"Copiando entregas de {origen_dgt_ruta_clave}...")
-        dgt_rutas_origen = db.execute(consulta.where(DgtRuta.clave == origen_dgt_ruta_clave)).scalars().all()
-        if not dgt_rutas_origen:
+        stmt = stmt.where(DgtRuta.clave == origen_dgt_ruta_clave)
+        dgt_ruta_origen = db.scalars(stmt).first()
+        if not dgt_ruta_origen:
             console.print(f"[red]DgtRuta de origen {origen_dgt_ruta_clave} no encontrada, eliminada o no es {COPIAR_PROPOSITO_ORIGEN}[/red]")
             raise Exit(code=1)
+        dgt_rutas_origenes = [dgt_ruta_origen]
     else:
-        console.print(f"Copiando todas las rutas activas cuyos depósitos sean de propósito {COPIAR_PROPOSITO_ORIGEN}...")
-        consulta = consulta.where(DgtDeposito.estatus == "A")
-        dgt_rutas_origen = db.execute(consulta).scalars().all()
-        if not dgt_rutas_origen:
+        stmt = stmt.where(DgtDeposito.estatus == "A")
+        dgt_rutas_origenes = db.scalars(stmt).all()
+        if not dgt_rutas_origenes:
             console.print(f"[yellow]No hay DgtRutas con {COPIAR_PROPOSITO_ORIGEN} activas[/yellow]")
             raise Exit(code=1)
 
@@ -589,7 +639,7 @@ def copiar(
     cliente = storage.Client()
 
     # Bucle por cada DgtRuta de origen
-    for dgt_ruta_origen in dgt_rutas_origen:
+    for dgt_ruta_origen in dgt_rutas_origenes:
 
         # Determinar la DgtRuta de destino, debe existir exactamente una DgtRuta de destino, si no se omite
         candidatos = _buscar_dgt_ruta_destino(db, dgt_ruta_origen)
