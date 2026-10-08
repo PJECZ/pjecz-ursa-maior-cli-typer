@@ -404,6 +404,10 @@ def _copiar_dgt_ruta(
             DgtEntrega.archivo_md5,
             DgtEntrega.archivo_crc32c,
             DgtEntrega.archivo_uuid,
+            DgtEntrega.expediente,
+            DgtEntrega.expediente_anio,
+            DgtEntrega.expediente_num,
+            DgtEntrega.descripcion,
             DgtEntrega.ultimo_evento,
             DgtEntrega.estatus,
         )
