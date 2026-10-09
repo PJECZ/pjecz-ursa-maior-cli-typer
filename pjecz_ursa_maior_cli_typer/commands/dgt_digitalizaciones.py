@@ -187,9 +187,10 @@ def _obtener_dgt_ruta(
                 ).scalar_one_or_none()
 
                 # Si se encontró en dgt_entregas, tomamos sus datos
+                anio_actual = datetime.now(tz=TZ).year
                 if dgt_entrega:
                     expediente = dgt_entrega.expediente if dgt_entrega.expediente else None
-                    expediente_anio = dgt_entrega.expediente_anio if 1800 <= dgt_entrega.expediente_anio <= datetime.now().year else None
+                    expediente_anio = dgt_entrega.expediente_anio if 1800 <= dgt_entrega.expediente_anio <= anio_actual else None
                     expediente_num = dgt_entrega.expediente_num if dgt_entrega.expediente_num else None
                     descripcion = dgt_entrega.descripcion if dgt_entrega.descripcion else None
                     ultimo_evento = dgt_entrega.ultimo_evento
@@ -200,7 +201,7 @@ def _obtener_dgt_ruta(
                     ).scalar_one_or_none()
                     if vsp_digitalizacion:
                         expediente = vsp_digitalizacion.expediente if vsp_digitalizacion.expediente else None
-                        expediente_anio = vsp_digitalizacion.expediente_anio if 1800 <= vsp_digitalizacion.expediente_anio <= datetime.now().year else None
+                        expediente_anio = vsp_digitalizacion.expediente_anio if 1800 <= vsp_digitalizacion.expediente_anio <= anio_actual else None
                         expediente_num = vsp_digitalizacion.expediente_num if vsp_digitalizacion.expediente_num else None
                         descripcion = vsp_digitalizacion.descripcion if vsp_digitalizacion.descripcion else None
                         ultimo_evento = "CREADO"
@@ -417,14 +418,14 @@ def obtener(
         _obtener_dgt_ruta(db, console, cliente, dgt_ruta, dgt_deposito, autoridad, bitacora, probar)
 
 
-def _enviar_dgt_ruta(
+def _entregar_dgt_ruta(
     db,
     console: Console,
     dgt_ruta: DgtRuta,
     bitacora: logging.Logger,
     probar: bool = False,
 ):
-    """Enviar las DgtDigitalizacion de una DgtRuta a la DgtPlataforma"""
+    """Entregar las DgtDigitalizacion de una DgtRuta a la DgtPlataforma"""
     deposito_origen = dgt_ruta.dgt_deposito.clave.lower()
     bitacora.info(f"Entregando digitalizaciones de {deposito_origen}/{dgt_ruta.directorio}...")
     console.print(f"Entregando digitalizaciones de [cyan]{deposito_origen}/{dgt_ruta.directorio}[/cyan]...")
@@ -595,21 +596,21 @@ def _enviar_dgt_ruta(
                             # Los expedientes omitidos no se actualizan, quedarán pendientes para el futuro
                             if dgt_digitalizacion.expediente in expedientes_omitidos:
                                 bitacora.warning(f"{bucle_str}: Expediente omitido: {dgt_digitalizacion.expediente}")
-                                continue
-                            # Actualizar DgtDigitalizacion
-                            stmt = select(DgtDigitalizacion).filter_by(id=dgt_digitalizacion.archivo_uuid)
-                            dgt_digitalizacion = db.execute(stmt).scalar_one()
-                            dgt_digitalizacion.entregado = ahora
-                            db.add(dgt_digitalizacion)
-                        db.flush()
+                            else:
+                                # Actualizar DgtDigitalizacion
+                                stmt = select(DgtDigitalizacion).filter_by(id=dgt_digitalizacion.archivo_uuid)
+                                dgt_digitalizacion = db.execute(stmt).scalar_one()
+                                dgt_digitalizacion.entregado = ahora
+                                db.add(dgt_digitalizacion)
+                                db.flush()
 
                     # Aplicar cambios en la base de datos
                     db.commit()
 
             # Incrementar el offset, el contador de procesados y avanzar la barra de progreso
             offset += limit
-            enviados += len(digitalizaciones)
-            progress.update(task, advance=len(digitalizaciones))
+            enviados += len(dgt_digitalizaciones)
+            progress.update(task, advance=len(dgt_digitalizaciones))
 
     # Mensajes finales
     prueba = "(PRUEBA) " if probar else ""
@@ -628,11 +629,11 @@ def _enviar_dgt_ruta(
 
 
 @app.command()
-def enviar(
+def entregar(
     dgt_ruta_clave: str = "",
     probar: Annotated[bool, Option("--probar", "-p", help="Probar sin guardar en la base de datos")] = False,
 ):
-    """Enviar las DgtDigitalizacion a la API de la DgtPlataforma
+    """Entregar las DgtDigitalizacion a la API de la DgtPlataforma
 
     Si se especifica la clave de la DgtRuta, se procesará sólo esa ruta.
     - Debe tener propósito DIGITALIZACIONES
@@ -678,4 +679,4 @@ def enviar(
 
     # Bucle por cada DgtRuta
     for dgt_ruta in dgt_rutas:
-        _enviar_dgt_ruta(db, console, dgt_ruta, bitacora, probar)
+        _entregar_dgt_ruta(db, console, dgt_ruta, bitacora, probar)
