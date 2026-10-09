@@ -144,3 +144,61 @@ Enviar de las digitalizaciones a las Plataformas
 ```bash
 cli dgt-digitalizaciones enviar
 ```
+
+## Cron
+
+Crear el bash script en `~/.local/bin/cli-dgt-digitalizaciones.sh`
+
+```bash
+#!/bin/bash
+#
+# DGT Digitalizaciones
+#
+
+log() {
+    echo "$(date '+%Y-%m-%d %H:%M') $*"
+}
+
+# Abortar ante cualquier error
+set -e
+
+log "Inicia cli-dgt-digitalizaciones.sh"
+
+# Cambiar de directorio
+cd $HOME/Documentos/GitHub/PJECZ/pjecz-ursa-maior-cli-typer
+
+# Definir la variable de entorno PYTHONPATH
+export PYTHONPATH=$(pwd)
+
+# Exportar la variable de entorno GOOGLE_APPLICATION_CREDENTIALS
+export GOOGLE_APPLICATION_CREDENTIALS=/home/pjecz-hercules/.google-application-credentials/justicia-digital-gob-mx-guivaloz-en-hereje.json
+
+# Definir comando uv
+CLI="${HOME}/.local/bin/uv run pjecz_ursa_maior_cli_typer/app.py"
+
+#
+# PJECZ Ursa Maior CLI Typer
+#
+# Los siguientes comandos crean archivos log individuales
+#
+
+# 0) NO DEBERIA SER NECESARIO Obtener las digitalizaciones, porque se insertan al copiar
+$CLI dgt-digitalizaciones obtener
+
+# 1) Obtener las entregas
+$CLI dgt-entregas obtener
+
+# 2) Copiar de entregas a digitalizaciones
+$CLI dgt-entregas copiar
+
+# 3) Enviar las digitalizaciones a la API de las plataformas
+$CLI dgt-digitalizaciones enviar
+
+log "Termina cli-dgt-digitalizaciones.sh"
+```
+
+Agregar en el _cron_ la siguiente línea para que se ejecute todos los días en la madrugada a las 03:11
+
+```
+11 03 * * * /home/pjecz-hercules/.local/bin/cli-dgt-digitalizaciones.sh >> /dev/null 2>&1
+```
