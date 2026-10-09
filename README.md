@@ -95,10 +95,12 @@ Consultar las rutas
 cli dgt-rutas consultar
 ```
 
+Los comandos **obtener**, **copiar** y **enviar** guardan detalles en archivos `logs/*.log`
+
 Obtener las entregas
 
 - Rastrea los depósitos de entregas
-- Valida el expediente, detectando errores como anomalías
+- Valida el expediente a partir del nombre del archivo, marcando los errores como anomalías
 - Inserta o actualiza registros en dgt_entregas
 
 ```bash
@@ -108,14 +110,14 @@ cli dgt-entregas obtener
 Obtener las digitalizaciones
 
 - Rastrea los depósitos de digitalizaciones
-- Omite las anomalías
+- Detecta archivos que no están en la base de datos
 - Inserta o actualiza registros en dgt_digitalizaciones
 
 ```bash
-cli dgt-digitalizaciones
+cli dgt-digitalizaciones obtener
 ```
 
-Probar la copia de entregas a digitalizaciones
+Probar la copia de **entregas** a **digitalizaciones**
 
 ```bash
 cli dgt-entregas copiar --probar
@@ -126,11 +128,19 @@ Revise el archivo `log` en el directorio `./logs` para revisar antes de copiar.
 Copiar de entregas a digitalizaciones
 
 ```bash
-cli dgt-entregas copiar --probar
+cli dgt-entregas copiar
 ```
 
-Probar el envío de las digitalizaciones a la Plataforma
+Probar el envío de las digitalizaciones a las Plataformas
 
 ```bash
 cli dgt-digitalizaciones enviar --probar
+```
+
+Revise el archivo `log` en el directorio `./logs` para revisar antes de enviar.
+
+Enviar de las digitalizaciones a las Plataformas
+
+```bash
+cli dgt-digitalizaciones enviar
 ```
