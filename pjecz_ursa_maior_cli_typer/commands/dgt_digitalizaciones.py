@@ -436,6 +436,7 @@ def _enviar_dgt_ruta(
     digitalizaciones_stmt = (
         select(
             Autoridad.clave.label("autoridad_clave"),
+            DgtDigitalizacion.id.label("archivo_uuid"),
             DgtDigitalizacion.expediente,
             DgtDigitalizacion.archivo_public_url.label("url"),
         )
@@ -587,14 +588,20 @@ def _enviar_dgt_ruta(
                         )
                     )
 
-                    # Actualizar la columna entregado, con excepción de los expedientes omitidos
-                    ahora = datetime.now(tz=TZ)
-                    for dgt_digitalizacion in dgt_digitalizaciones:
-                        if dgt_digitalizacion.expediente in expediente_omitido:
-                            bitacora.warning(f"{bucle_str}: Expediente omitido: {dgt_digitalizacion.expediente}")
-                            continue
-                        dgt_digitalizacion.entregado = ahora
-                        db.add(dgt_digitalizacion)
+                    # Actualizar la columna "entregado" con el tiempo actual
+                    if expedientes_omitidos:
+                        ahora = datetime.now(tz=TZ)
+                        for dgt_digitalizacion in dgt_digitalizaciones:
+                            # Los expedientes omitidos no se actualizan, quedarán pendientes para el futuro
+                            if dgt_digitalizacion.expediente in expedientes_omitidos:
+                                bitacora.warning(f"{bucle_str}: Expediente omitido: {dgt_digitalizacion.expediente}")
+                                continue
+                            # Actualizar DgtDigitalizacion
+                            stmt = select(DgtDigitalizacion).filter_by(id=dgt_digitalizacion.archivo_uuid)
+                            dgt_digitalizacion = db.execute(stmt).scalar_one()
+                            dgt_digitalizacion.entregado = ahora
+                            db.add(dgt_digitalizacion)
+                        db.flush()
 
                     # Aplicar cambios en la base de datos
                     db.commit()
