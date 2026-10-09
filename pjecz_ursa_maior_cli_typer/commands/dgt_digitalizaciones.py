@@ -459,6 +459,7 @@ def _entregar_dgt_ruta(
     plataforma_stmt = (
         select(
             DgtPlataforma.api_key,
+            DgtPlataforma.descripcion,
             DgtPlataformaEndpoint.id.label("dgt_plataforma_endpoint_id"),
             DgtPlataformaEndpoint.ruta.label("url"),
         )
@@ -475,13 +476,13 @@ def _entregar_dgt_ruta(
         console.print(f"[red]No se encontró plataforma para autoridad {dgt_ruta.autoridad_clave}[/red]")
         return
 
-    # Barra de progreso para entregar las digitalizaciones
-    with Progress() as progress:
-        task = progress.add_task("Entregando datos a la API de la plataforma:", total=digitalizaciones_total)
+    # Inicializar el limit y el offset para segmentar los envíos
+    limit = 100
+    offset = 0
 
-        # Inicializar el limit y el offset para segmentar los envíos
-        limit = 100
-        offset = 0
+    # Barra de progreso
+    with Progress() as progress:
+        task = progress.add_task(f"Entregando a {plataforma.descripcion}:", total=digitalizaciones_total)
 
         # Bucle entre paquetes de envíos
         while offset < digitalizaciones_total:
@@ -489,19 +490,17 @@ def _entregar_dgt_ruta(
             tope = min(offset + limit, digitalizaciones_total)
             bucle_str = f"Desde {offset} hasta {tope} de {digitalizaciones_total}"
 
-            # Armar las digitalizaciones para el payload
-            digitalizaciones = []  # Inicializar el listado para el payload
-            for dgt_digitalizacion in dgt_digitalizaciones:
-                digitalizaciones.append(
+            # Armar el payload
+            listado = []
+            for item in dgt_digitalizaciones:
+                listado.append(
                     {
-                        "autoridadClave": dgt_digitalizacion.autoridad_clave,
-                        "numeroExpediente": dgt_digitalizacion.expediente,
-                        "url": dgt_digitalizacion.url,
+                        "autoridadClave": item.autoridad_clave,
+                        "numeroExpediente": item.expediente,
+                        "url": item.url,
                     }
                 )
-
-            # Definir el payload
-            payload = {"digitalizaciones": digitalizaciones}
+            payload = {"digitalizaciones": listado}
 
             # Enviar el payload a la API de la plataforma
             if probar is False:
@@ -595,13 +594,13 @@ def _entregar_dgt_ruta(
                     # Actualizar la columna "entregado" con el tiempo actual
                     if expedientes_omitidos:
                         ahora = datetime.now(tz=TZ)
-                        for dgt_digitalizacion in dgt_digitalizaciones:
+                        for item in dgt_digitalizaciones:
                             # Los expedientes omitidos no se actualizan, quedarán pendientes para el futuro
-                            if dgt_digitalizacion.expediente in expedientes_omitidos:
-                                bitacora.warning(f"{bucle_str}: Expediente omitido: {dgt_digitalizacion.expediente}")
+                            if item.expediente in expedientes_omitidos:
+                                bitacora.warning(f"{bucle_str}: Expediente omitido: {item.expediente}")
                             else:
                                 # Actualizar DgtDigitalizacion
-                                stmt = select(DgtDigitalizacion).filter_by(id=dgt_digitalizacion.archivo_uuid)
+                                stmt = select(DgtDigitalizacion).filter_by(id=item.archivo_uuid)
                                 dgt_digitalizacion = db.execute(stmt).scalar_one()
                                 dgt_digitalizacion.entregado = ahora
                                 db.add(dgt_digitalizacion)
@@ -613,7 +612,7 @@ def _entregar_dgt_ruta(
             # Incrementar el offset, el contador de procesados y avanzar la barra de progreso
             offset += limit
             enviados += len(dgt_digitalizaciones)
-            progress.update(task, advance=len(dgt_digitalizaciones))
+            progress.update(task, completed=tope)
 
     # Mensajes finales
     prueba = "(PRUEBA) " if probar else ""
