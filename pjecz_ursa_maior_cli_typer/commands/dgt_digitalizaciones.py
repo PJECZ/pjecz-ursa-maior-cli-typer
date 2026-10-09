@@ -134,7 +134,7 @@ def _obtener_dgt_ruta(
     # Obtener de nuevo los blobs para iterar sobre ellos, ya que el anterior generador se agotó al contar
     blobs = cliente.list_blobs(dgt_deposito.clave.lower(), prefix=dgt_ruta.directorio)
     with Progress() as progress:
-        task = progress.add_task("Obteniendo digitalizaciones...", total=total)
+        task = progress.add_task("Obteniendo archivos del depósito:", total=total)
 
         # Bucle por cada recurso en el depósito
         for blob in blobs:
@@ -477,7 +477,7 @@ def _entregar_dgt_ruta(
 
     # Barra de progreso para entregar las digitalizaciones
     with Progress() as progress:
-        task = progress.add_task("Enviando digitalizaciones...", total=digitalizaciones_total)
+        task = progress.add_task("Entregando datos a la API de la plataforma:", total=digitalizaciones_total)
 
         # Inicializar el limit y el offset para segmentar los envíos
         limit = 100
@@ -486,7 +486,8 @@ def _entregar_dgt_ruta(
         # Bucle entre paquetes de envíos
         while offset < digitalizaciones_total:
             dgt_digitalizaciones = db.execute(digitalizaciones_stmt.offset(offset).limit(limit)).all()
-            bucle_str = f"Desde {offset} hasta {offset + len(dgt_digitalizaciones)} de {digitalizaciones_total}"
+            tope = min(offset + limit, digitalizaciones_total)
+            bucle_str = f"Desde {offset} hasta {tope} de {digitalizaciones_total}"
 
             # Armar las digitalizaciones para el payload
             digitalizaciones = []  # Inicializar el listado para el payload
@@ -570,12 +571,14 @@ def _entregar_dgt_ruta(
                     expedientes_omitidos = []
                     if datos.get("errores"):
                         for error in datos["errores"]:
-                            bitacora.error(f"{bucle_str}: Error al enviar: {error}")
-                            # Por ejemplo, un error es "Expediente no encontrado: SLT-J2-MER 456/2024"
-                            # Extraer el 00000/2024 con una expresión regular
-                            expediente_omitido = re.search(r"\d+/\d+", error)
-                            if expediente_omitido:
-                                expedientes_omitidos.append(expediente_omitido.group())
+                            # Juntar los expedientes omitidos, ejemplo: "Expediente no encontrado: SLT-J2-MER 456/2024"
+                            if error.startswith("Expediente no encontrado:"):
+                                # Extraer el 00000/2024 con una expresión regular
+                                expediente_omitido = re.search(r"\d+/\d+", error)
+                                if expediente_omitido:
+                                    expedientes_omitidos.append(expediente_omitido.group())
+                            else:
+                                bitacora.error(f"{bucle_str}: Error al enviar: {error}")
 
                     # Guardar en la bitácora los resultados de este paquete
                     db.add(

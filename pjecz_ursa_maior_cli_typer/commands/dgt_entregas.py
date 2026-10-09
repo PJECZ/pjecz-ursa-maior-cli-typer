@@ -127,7 +127,7 @@ def _obtener_dgt_ruta(
     # Obtener de nuevo los blobs para iterar sobre ellos, ya que el anterior generador se agotó al contar
     blobs = cliente.list_blobs(dgt_deposito.clave.lower(), prefix=dgt_ruta.directorio)
     with Progress() as progress:
-        task = progress.add_task("Obteniendo entregas...", total=total)
+        task = progress.add_task("Obteniendo archivos del depósito:", total=total)
 
         # Bucle por cada blob en el depósito
         for blob in blobs:
@@ -428,7 +428,7 @@ def _copiar_dgt_ruta(
 
     # Barra de progreso
     with Progress() as progress:
-        task = progress.add_task("Copiando entregas a digitalizaciones...", total=total)
+        task = progress.add_task("Copiando archivos de entregas a digitalizaciones:", total=total)
 
         # Bucle por cada DgtEntrega
         for dgt_entrega in db.execute(stmt).all():
