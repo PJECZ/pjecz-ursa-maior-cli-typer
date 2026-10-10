@@ -555,41 +555,41 @@ def _copiar_dgt_ruta(
                         )
                     )
             else:
-                    # Insertar DgtDigitalizacion, su ID es el UUID igual que archivo_uuid
-                    dgt_digitalizacion = DgtDigitalizacion(
-                        id=archivo_uuid,
-                        autoridad_id=dgt_entrega.autoridad_id,
-                        dgt_ruta_id=dgt_ruta_destino.id,
-                        archivo_nombre=archivo_nombre,
+                # Insertar DgtDigitalizacion, su ID es el UUID igual que archivo_uuid
+                dgt_digitalizacion = DgtDigitalizacion(
+                    id=archivo_uuid,
+                    autoridad_id=dgt_entrega.autoridad_id,
+                    dgt_ruta_id=dgt_ruta_destino.id,
+                    archivo_nombre=archivo_nombre,
+                    archivo_url=archivo_url,
+                    archivo_public_url=blob.public_url,
+                    archivo_md5=archivo_md5,
+                    archivo_crc32c=archivo_crc32c,
+                    archivo_actualizado=archivo_actualizado,
+                    archivo_tamano=archivo_tamano,
+                    expediente=dgt_entrega.expediente,
+                    expediente_anio=dgt_entrega.expediente_anio,
+                    expediente_num=dgt_entrega.expediente_num,
+                    descripcion=dgt_entrega.descripcion,
+                    ultimo_evento=ultimo_evento,
+                    ultimo_evento_creado=archivo_actualizado,
+                    es_anomalo=False,
+                )
+                db.add(dgt_digitalizacion)
+                db.flush()
+                db.add(
+                    DgtDigitalizacionBitacora(
+                        dgt_digitalizacion_id=dgt_digitalizacion.id,
                         archivo_url=archivo_url,
-                        archivo_public_url=blob.public_url,
-                        archivo_md5=archivo_md5,
-                        archivo_crc32c=archivo_crc32c,
+                        archivo_md5_old="",
+                        archivo_md5_new=archivo_md5,
+                        archivo_crc32c_old="",
+                        archivo_crc32c_new=archivo_crc32c,
                         archivo_actualizado=archivo_actualizado,
                         archivo_tamano=archivo_tamano,
-                        expediente=dgt_entrega.expediente,
-                        expediente_anio=dgt_entrega.expediente_anio,
-                        expediente_num=dgt_entrega.expediente_num,
-                        descripcion=dgt_entrega.descripcion,
-                        ultimo_evento=ultimo_evento,
-                        ultimo_evento_creado=archivo_actualizado,
-                        es_anomalo=False,
+                        evento=ultimo_evento,
                     )
-                    db.add(dgt_digitalizacion)
-                    db.flush()
-                    db.add(
-                        DgtDigitalizacionBitacora(
-                            dgt_digitalizacion_id=dgt_digitalizacion.id,
-                            archivo_url=archivo_url,
-                            archivo_md5_old="",
-                            archivo_md5_new=archivo_md5,
-                            archivo_crc32c_old="",
-                            archivo_crc32c_new=archivo_crc32c,
-                            archivo_actualizado=archivo_actualizado,
-                            archivo_tamano=archivo_tamano,
-                            evento=ultimo_evento,
-                        )
-                    )
+                )
 
                 # Actualizar en DgtEntrega con el UUID para marcar como copiado
                 stmt = select(DgtEntrega).filter_by(id=dgt_entrega.id)
