@@ -434,15 +434,17 @@ def _copiar_dgt_ruta(
         for dgt_entrega in db.execute(stmt).all():
             progress.update(task, advance=1)  # Avanzar la barra de progreso
 
-            # Buscar posible DgtDigitalizacion por el UUID de DgtEntrega
+            # Buscar posible DgtDigitalizacion con el UUID en DgtEntrega
             posible_dgt_digitalizacion = None
             if dgt_entrega.archivo_uuid:
                 posible_dgt_digitalizacion = db.execute(
                     select(
                         DgtDigitalizacion.id.label("archivo_uuid"),
+                        DgtDigitalizacion.archivo_url,
                         DgtDigitalizacion.archivo_md5,
                         DgtDigitalizacion.archivo_crc32c,
-                        DgtDigitalizacion.archivo_url,
+                        DgtDigitalizacion.archivo_actualizado,
+                        DgtDigitalizacion.archivo_tamano,
                         DgtDigitalizacion.ultimo_evento,
                         DgtDigitalizacion.estatus,
                     )
@@ -539,7 +541,20 @@ def _copiar_dgt_ruta(
                     dgt_digitalizacion.ultimo_evento_creado = archivo_actualizado
                     db.add(dgt_digitalizacion)
                     db.flush()
-                else:
+                    db.add(
+                        DgtDigitalizacionBitacora(
+                            dgt_digitalizacion_id=dgt_digitalizacion.id,
+                            archivo_url=dgt_digitalizacion.archivo_url,
+                            archivo_md5_old=posible_dgt_digitalizacion.archivo_md5,
+                            archivo_md5_new=dgt_digitalizacion.archivo_md5,
+                            archivo_crc32c_old=posible_dgt_digitalizacion.archivo_crc32c,
+                            archivo_crc32c_new=dgt_digitalizacion.archivo_crc32c,
+                            archivo_actualizado=dgt_digitalizacion.archivo_actualizado,
+                            archivo_tamano=dgt_digitalizacion.archivo_tamano,
+                            evento=dgt_digitalizacion.ultimo_evento,
+                        )
+                    )
+            else:
                     # Insertar DgtDigitalizacion, su ID es el UUID igual que archivo_uuid
                     dgt_digitalizacion = DgtDigitalizacion(
                         id=archivo_uuid,
@@ -562,21 +577,19 @@ def _copiar_dgt_ruta(
                     )
                     db.add(dgt_digitalizacion)
                     db.flush()
-
-                # Agregar a la bitácora
-                db.add(
-                    DgtDigitalizacionBitacora(
-                        dgt_digitalizacion_id=dgt_digitalizacion.id,
-                        archivo_url=archivo_url,
-                        archivo_md5_old="",
-                        archivo_md5_new=archivo_md5,
-                        archivo_crc32c_old="",
-                        archivo_crc32c_new=archivo_crc32c,
-                        archivo_actualizado=archivo_actualizado,
-                        archivo_tamano=archivo_tamano,
-                        evento=ultimo_evento,
+                    db.add(
+                        DgtDigitalizacionBitacora(
+                            dgt_digitalizacion_id=dgt_digitalizacion.id,
+                            archivo_url=archivo_url,
+                            archivo_md5_old="",
+                            archivo_md5_new=archivo_md5,
+                            archivo_crc32c_old="",
+                            archivo_crc32c_new=archivo_crc32c,
+                            archivo_actualizado=archivo_actualizado,
+                            archivo_tamano=archivo_tamano,
+                            evento=ultimo_evento,
+                        )
                     )
-                )
 
                 # Actualizar en DgtEntrega con el UUID para marcar como copiado
                 stmt = select(DgtEntrega).filter_by(id=dgt_entrega.id)
