@@ -435,56 +435,50 @@ def _copiar_dgt_ruta(
             progress.update(task, advance=1)  # Avanzar la barra de progreso
 
             # Buscar posible DgtDigitalizacion con el UUID en DgtEntrega
-            posible_dgt_digitalizacion = None
+            dgt_digitalizacion = None
             if dgt_entrega.archivo_uuid:
-                stmt = select(DgtDigitalizacion).filter_by(id=dgt_entrega.id)
-                posible_dgt_digitalizacion = db.execute(stmt).first()
+                stmt = select(DgtDigitalizacion).filter_by(id=dgt_entrega.archivo_uuid)
+                dgt_digitalizacion = db.execute(stmt).first()
 
             # ¿Existe su DgtDigitalizacion?...
             archivo_uuid = None
             se_va_a_copiar = False
             ultimo_evento = ""
-            if posible_dgt_digitalizacion:
+            if dgt_digitalizacion:
                 # Sí existe DgtDigitalizacion
                 archivo_uuid = dgt_entrega.archivo_uuid  # Importante conservar el UUID
                 # Omitir si está eliminada
-                if posible_dgt_digitalizacion.estatus != "A":
+                if dgt_digitalizacion.estatus != "A":
                     omitidos += 1
                     continue
                 # Comparar elCRC32C y el MD5
-                if posible_dgt_digitalizacion.archivo_md5 == dgt_entrega.archivo_md5 and posible_dgt_digitalizacion.archivo_crc32c == dgt_entrega.archivo_crc32c:
+                if dgt_digitalizacion.archivo_md5 == dgt_entrega.archivo_md5 and dgt_digitalizacion.archivo_crc32c == dgt_entrega.archivo_crc32c:
                     # Son iguales el CRC32C y el MD5
                     # Si el último evento es igual, se omite
-                    if posible_dgt_digitalizacion.ultimo_evento == dgt_entrega.ultimo_evento:
+                    if dgt_digitalizacion.ultimo_evento == dgt_entrega.ultimo_evento:
                         omitidos += 1
                         continue
-                    # El último evento es diferente
-                    # NO se va a copiar
+                    # Entonces NO se va a copiar
                     se_va_a_copiar = False
-                    # Pero SÍ se va a tomar el último evento, posiblemente haya sido ELIMINADO
-                    ultimo_evento = posible_dgt_digitalizacion.ultimo_evento
-                    bitacora.info(f"Actualizar con {ultimo_evento} para {posible_dgt_digitalizacion.archivo_url}")
+                    # PERO SÍ se va a tomar el último evento, posiblemente haya sido ELIMINADO
+                    ultimo_evento = dgt_digitalizacion.ultimo_evento
+                    bitacora.info(f"Actualizar con {ultimo_evento} para {dgt_digitalizacion.archivo_url}")
                 else:
                     # NO coinciden el CRC32C y el MD5, entonces se va a sobreescribir
                     se_va_a_copiar = True
-                    ultimo_evento = posible_dgt_digitalizacion.ultimo_evento
-                    bitacora.info(f"Sobreescribir con {ultimo_evento} para {posible_dgt_digitalizacion.archivo_url}")
+                    ultimo_evento = dgt_digitalizacion.ultimo_evento
+                    bitacora.info(f"Sobreescribir con {ultimo_evento} para {dgt_digitalizacion.archivo_url}")
             else:
-                # No existe DgtDigitalizacion
-                archivo_uuid = uuid4()  # Tal sea nuevo
                 # Omitir si está eliminada
-                if dgt_entrega.estatus != "A":
+                if dgt_entrega.estatus != "A" or dgt_entrega == "ELIMINADO":
                     omitidos += 1
                     continue
-                # Si fue es CREADO o MODIFICADO, entonces se va a copiar
-                if dgt_entrega.ultimo_evento in ("CREADO", "MODIFICADO"):
-                    se_va_a_copiar = True
-                    ultimo_evento = "CREADO"
-                    bitacora.info(f"Copiar con {ultimo_evento} desde {dgt_entrega.archivo_url}")
-                else:
-                    # DgtEntrega debe estar ELIMINADO, entonces se omite
-                    omitidos += 1
-                    continue
+                # No existe DgtDigitalizacion
+                archivo_uuid = uuid4()  # Nuevo registro en DgtDigitalizacion
+                # Fue es CREADO o MODIFICADO, entonces se va a copiar
+                se_va_a_copiar = True
+                ultimo_evento = "CREADO"
+                bitacora.info(f"Copiar con {ultimo_evento} desde {dgt_entrega.archivo_url}")
 
             # Definir el nombre del archivo de destino con un UUID, conservando la extensión
             extension = dgt_entrega.archivo_nombre.rsplit(".", maxsplit=1)[-1].lower() if "." in dgt_entrega.archivo_nombre else ""
@@ -494,12 +488,12 @@ def _copiar_dgt_ruta(
             # Copiar el archivo
             if probar is False:
                 # No se va a copiar, entonces si ya hay DgtDigitalizacion estas columnas no cambian
-                if se_va_a_copiar is False and posible_dgt_digitalizacion:
-                    archivo_url = posible_dgt_digitalizacion.archivo_url
-                    archivo_md5 = posible_dgt_digitalizacion.archivo_md5
-                    archivo_crc32c = posible_dgt_digitalizacion.archivo_crc32c
-                    archivo_actualizado = posible_dgt_digitalizacion.archivo_actualizado
-                    archivo_tamano = posible_dgt_digitalizacion.archivo_tamano
+                if se_va_a_copiar is False and dgt_digitalizacion:
+                    archivo_url = dgt_digitalizacion.archivo_url
+                    archivo_md5 = dgt_digitalizacion.archivo_md5
+                    archivo_crc32c = dgt_digitalizacion.archivo_crc32c
+                    archivo_actualizado = dgt_digitalizacion.archivo_actualizado
+                    archivo_tamano = dgt_digitalizacion.archivo_tamano
 
                 # Si se va a copiar
                 if se_va_a_copiar is True:
@@ -518,21 +512,21 @@ def _copiar_dgt_ruta(
                     archivo_tamano = blob.size or 0
 
                 # Si ya tenemos la DgtDigitalizacion
-                if posible_dgt_digitalizacion:
-                    archivo_md5_old = posible_dgt_digitalizacion.archivo_md5
-                    archivo_crc32c_old = posible_dgt_digitalizacion.archivo_crc32c
-                    # Actualizar DgtDigitalizacion
-                    posible_dgt_digitalizacion.archivo_md5 = archivo_md5
-                    posible_dgt_digitalizacion.archivo_crc32c = archivo_crc32c
-                    posible_dgt_digitalizacion.archivo_actualizado = archivo_actualizado
-                    posible_dgt_digitalizacion.archivo_tamano = archivo_tamano
-                    posible_dgt_digitalizacion.ultimo_evento = ultimo_evento
-                    posible_dgt_digitalizacion.ultimo_evento_creado = archivo_actualizado
-                    db.add(posible_dgt_digitalizacion)
+                if dgt_digitalizacion:
+                    archivo_md5_old = dgt_digitalizacion.archivo_md5
+                    archivo_crc32c_old = dgt_digitalizacion.archivo_crc32c
+                    # Actualizar la DgtDigitalizacion existente
+                    dgt_digitalizacion.archivo_md5 = archivo_md5
+                    dgt_digitalizacion.archivo_crc32c = archivo_crc32c
+                    dgt_digitalizacion.archivo_actualizado = archivo_actualizado
+                    dgt_digitalizacion.archivo_tamano = archivo_tamano
+                    dgt_digitalizacion.ultimo_evento = ultimo_evento
+                    dgt_digitalizacion.ultimo_evento_creado = archivo_actualizado
+                    db.add(dgt_digitalizacion)
                     db.flush()
                     db.add(
                         DgtDigitalizacionBitacora(
-                            dgt_digitalizacion_id=posible_dgt_digitalizacion.id,
+                            dgt_digitalizacion_id=dgt_digitalizacion.id,
                             archivo_url=dgt_digitalizacion.archivo_url,
                             archivo_md5_old=archivo_md5_old,
                             archivo_md5_new=dgt_digitalizacion.archivo_md5,
@@ -544,7 +538,7 @@ def _copiar_dgt_ruta(
                         )
                     )
                 else:
-                    # Insertar DgtDigitalizacion
+                    # Insertar NUEVA DgtDigitalizacion
                     dgt_digitalizacion = DgtDigitalizacion(
                         id=archivo_uuid,
                         autoridad_id=dgt_entrega.autoridad_id,
