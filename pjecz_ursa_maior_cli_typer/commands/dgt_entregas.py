@@ -66,14 +66,16 @@ def consultar(
     )
     autoridad_clave = safe_clave(autoridad_clave)
     if autoridad_clave != "":
-        autoridad = db.execute(select(Autoridad.id).where(Autoridad.clave == autoridad_clave)).first()
+        stmt = select(Autoridad.id).filter_by(clave=autoridad_clave)
+        autoridad = db.scalars(stmt).first()  # Un registro o None
         if autoridad is None:
             console.print(f"[red]Autoridad con clave {autoridad_clave} no encontrada[/red]")
             raise Exit(code=1)
         stmt = stmt.where(DgtEntrega.autoridad_id == autoridad.id)
     dgt_ruta_clave = safe_clave(dgt_ruta_clave)
     if dgt_ruta_clave != "":
-        dgt_ruta = db.execute(select(DgtRuta.id).where(DgtRuta.clave == dgt_ruta_clave)).first()
+        stmt = select(DgtRuta.id).filter_by(clave=dgt_ruta_clave)
+        dgt_ruta = db.scalars(stmt).first()  # Un registro o None
         if dgt_ruta is None:
             console.print(f"[red]DGT ruta con clave {dgt_ruta_clave} no encontrada[/red]")
             raise Exit(code=1)
@@ -438,7 +440,7 @@ def _copiar_dgt_ruta(
             dgt_digitalizacion = None
             if dgt_entrega.archivo_uuid:
                 stmt = select(DgtDigitalizacion).filter_by(id=dgt_entrega.archivo_uuid)
-                dgt_digitalizacion = db.execute(stmt).first()
+                dgt_digitalizacion = db.scalars(stmt).first()  # Un registro o None
 
             # ¿Existe su DgtDigitalizacion?...
             archivo_uuid = None
@@ -575,7 +577,7 @@ def _copiar_dgt_ruta(
                     )
                     # Actualizar en DgtEntrega con el UUID para marcar como copiado
                     stmt = select(DgtEntrega).filter_by(id=dgt_entrega.id)
-                    actualizar_dgt_entrega = db.execute(stmt).first()
+                    actualizar_dgt_entrega = db.scalars(stmt).first()  # Un registro o None
                     actualizar_dgt_entrega.archivo_uuid = archivo_uuid
                     db.add(actualizar_dgt_entrega)
                     db.flush()
@@ -633,7 +635,7 @@ def copiar(
     dgt_rutas_origenes = []
     if origen_dgt_ruta_clave != "":
         stmt = stmt.where(DgtRuta.clave == origen_dgt_ruta_clave)
-        dgt_ruta_origen = db.scalars(stmt).first()
+        dgt_ruta_origen = db.scalars(stmt).first()  # Un registro o None
         if not dgt_ruta_origen:
             console.print(f"[red]DgtRuta de origen {origen_dgt_ruta_clave} no encontrada, eliminada o no es {COPIAR_PROPOSITO_ORIGEN}[/red]")
             raise Exit(code=1)
