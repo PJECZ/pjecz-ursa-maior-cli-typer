@@ -131,18 +131,18 @@ Copiar de entregas a digitalizaciones
 cli dgt-entregas copiar
 ```
 
-Probar el envío de las digitalizaciones a las Plataformas
+Probar la entrega de las digitalizaciones a las Plataformas
 
 ```bash
-cli dgt-digitalizaciones enviar --probar
+cli dgt-digitalizaciones entregar --probar
 ```
 
-Revise el archivo `log` en el directorio `./logs` para revisar antes de enviar.
+Revise el archivo `log` en el directorio `./logs` para revisar antes de entregar.
 
-Enviar de las digitalizaciones a las Plataformas
+Entregar de las digitalizaciones a las Plataformas
 
 ```bash
-cli dgt-digitalizaciones enviar
+cli dgt-digitalizaciones entregar
 ```
 
 ## Cron
@@ -191,8 +191,8 @@ $CLI dgt-entregas obtener
 # 2) Copiar de entregas a digitalizaciones
 $CLI dgt-entregas copiar
 
-# 3) Enviar las digitalizaciones a la API de las plataformas
-$CLI dgt-digitalizaciones enviar
+# 3) Entregar las digitalizaciones a la API de las plataformas
+$CLI dgt-digitalizaciones entregar
 
 log "Termina cli-dgt-digitalizaciones.sh"
 ```
