@@ -71,14 +71,16 @@ def consultar(
     )
     autoridad_clave = safe_clave(autoridad_clave)
     if autoridad_clave != "":
-        autoridad = db.execute(select(Autoridad.id).where(Autoridad.clave == autoridad_clave)).first()
+        stmt = select(Autoridad.id).filter_by(clave=autoridad_clave)
+        autoridad = db.scalars(stmt).first()  # Un registro o None
         if autoridad is None:
             console.print(f"[red]Autoridad con clave {autoridad_clave} no encontrada[/red]")
             raise Exit(code=1)
         stmt = stmt.where(DgtDigitalizacion.autoridad_id == autoridad.id)
     dgt_ruta_clave = safe_clave(dgt_ruta_clave)
     if dgt_ruta_clave != "":
-        dgt_ruta = db.execute(select(DgtRuta.id).where(DgtRuta.clave == dgt_ruta_clave)).first()
+        stmt = select(DgtRuta.id).where(DgtRuta.clave == dgt_ruta_clave)
+        dgt_ruta = db.scalars(stmt).first()  # Un registro o None
         if dgt_ruta is None:
             console.print(f"[red]DGT ruta con clave {dgt_ruta_clave} no encontrada[/red]")
             raise Exit(code=1)
