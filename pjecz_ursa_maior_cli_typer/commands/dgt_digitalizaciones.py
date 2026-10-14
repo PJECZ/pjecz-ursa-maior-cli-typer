@@ -338,7 +338,7 @@ def _obtener_dgt_ruta(
                 )
             )
             db.flush()
-        eliminados.append(archivo_url)
+        eliminados.append(dgt_digitalizacion.archivo_url)
 
     # Guardar cambios en la base de datos
     if probar is False:
