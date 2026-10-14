@@ -345,7 +345,7 @@ def _obtener_dgt_ruta(
         db.commit()
 
     # Mensajes finales
-    prueba = "(PRUEBA) " if probar else ""
+    prueba = "[yellow](PRUEBA)[/yellow] " if probar else ""
     if len(anomalias) > 0:
         for anomalia in anomalias:
             bitacora.info(f"{prueba}Anomalía (fueron omitidos): {anomalia}")
@@ -376,12 +376,16 @@ def _obtener_dgt_ruta(
 
 @app.command()
 def obtener(
+    dgt_deposito_clave: str = "",
     dgt_ruta_clave: str = "",
     probar: Annotated[bool, Option("--probar", "-p", help="Probar sin guardar en la base de datos")] = False,
 ):
-    """Insertar o actualizar registros en DgtDigitalizacion rastreando el depósito
+    """Insertar o actualizar registros en DgtDigitalizacion.
 
-    Si no se indica la clave de la DgtRuta, se procesan todas las DgtRutas con propósito ENTREGAS y estatus "A".
+    Si proporciona la clave del depósito, se procesan todas las rutas (no eliminadas) del mismo.
+    Si proporciona la clave de la ruta, se procesa sólo esa ruta.
+    Si ninguna de las anteriores se da, se procesan todas las rutas (no eliminadas) de los depósitos.
+    Siempre procesa rutas y depósitos con propósito DIGITALIZACIONES.
     """
     ahora = datetime.now(tz=TZ)
     archivo_log = f"logs/dgt-digitalizaciones-{ahora.strftime('%Y-%m-%d-%H%M%S')}-obtener.log"
@@ -399,17 +403,25 @@ def obtener(
         .join(DgtDeposito)
         .join(Autoridad, Autoridad.clave == DgtRuta.autoridad_clave)
         .where(DgtDeposito.proposito == DGT_DEPOSITO_PROPOSITO)
+        .where(DgtRuta.estatus == "A")
+        .where(DgtDeposito.estatus == "A")
     )
 
+    dgt_deposito_clave = safe_clave(dgt_deposito_clave, max_len=64)
     dgt_ruta_clave = safe_clave(dgt_ruta_clave, max_len=64)
     if dgt_ruta_clave != "":
-        stmt = stmt.where(DgtRuta.clave == dgt_ruta_clave).where(DgtRuta.estatus == "A")
+        stmt = stmt.where(DgtRuta.clave == dgt_ruta_clave)
         renglones = db.execute(stmt).all()
         if not renglones:
             console.print(f"[red]DgtRuta con clave {dgt_ruta_clave} no encontrada o eliminada[/red]")
             raise Exit(code=1)
+    elif dgt_deposito_clave != "":
+        stmt = stmt.where(DgtDeposito.clave == dgt_deposito_clave)
+        renglones = db.execute(stmt).all()
+        if not renglones:
+            console.print(f"[red]DgtDeposito con clave {dgt_ruta_clave} no encontrado o eliminado[/red]")
+            raise Exit(code=1)
     else:
-        stmt = stmt.where(DgtRuta.estatus == "A")
         renglones = db.execute(stmt).all()
         if not renglones:
             console.print("[yellow]No hay DgtRutas activas[/yellow]")
@@ -617,7 +629,7 @@ def _entregar_dgt_ruta(
             progress.update(task, completed=tope)
 
     # Mensajes finales
-    prueba = "(PRUEBA) " if probar else ""
+    prueba = "[yellow](PRUEBA)[/yellow] " if probar else ""
     if enviados > 0:
         bitacora.info(f"{prueba}Enviados: {enviados}")
         console.print(f"{prueba}Enviados: [cyan]{enviados}[/cyan]")
@@ -634,17 +646,16 @@ def _entregar_dgt_ruta(
 
 @app.command()
 def entregar(
+    dgt_deposito_clave: str = "",
     dgt_ruta_clave: str = "",
     probar: Annotated[bool, Option("--probar", "-p", help="Probar sin guardar en la base de datos")] = False,
 ):
-    """Entregar las DgtDigitalizacion a la API de la DgtPlataforma
+    """Entregar las DgtDigitalizacion a la API de la DgtPlataforma.
 
-    Si se especifica la clave de la DgtRuta, se procesará sólo esa ruta.
-    - Debe tener propósito DIGITALIZACIONES
-    - Debe ser de tipo EXPEDIENTE
-    - Debe tener estatus "A"
-
-    Si no se especifica, se procesan todas las DgtRutas con las condiciones anteriores.
+    Si proporciona la clave del depósito, se procesan todas las rutas (no eliminadas) del mismo.
+    Si proporciona la clave de la ruta, se procesa sólo esa ruta.
+    Si ninguna de las anteriores se da, se procesan todas las rutas (no eliminadas) de los depósitos.
+    Siempre procesa rutas y depósitos con propósito DIGITALIZACIONES.
     """
     ahora = datetime.now(tz=TZ)
     archivo_log = f"logs/dgt-digitalizaciones-{ahora.strftime('%Y-%m-%d-%H%M%S')}-entregar.log"
@@ -657,7 +668,6 @@ def entregar(
     console = Console()
     db = get_database()
 
-    # Consultar las DgtRutas con propósito DGT_DEPOSITO_PROPOSITO y DGT_TIPO_CLAVE
     stmt = (
         select(DgtRuta)
         .join(DgtDeposito)
@@ -665,15 +675,22 @@ def entregar(
         .where(DgtDeposito.proposito == DGT_DEPOSITO_PROPOSITO)
         .where(DgtTipo.clave == DGT_TIPO_CLAVE)
         .where(DgtRuta.estatus == "A")
+        .where(DgtDeposito.estatus == "A")
     )
 
-    # Si viene dgt_ruta_clave
+    dgt_deposito_clave = safe_clave(dgt_deposito_clave, max_len=64)
     dgt_ruta_clave = safe_clave(dgt_ruta_clave, max_len=64)
     if dgt_ruta_clave != "":
         stmt = stmt.where(DgtRuta.clave == dgt_ruta_clave)
         dgt_rutas = db.scalars(stmt).all()
         if not dgt_rutas:
             console.print(f"[red]DgtRuta con clave {dgt_ruta_clave} no encontrada, eliminada o no es {DGT_DEPOSITO_PROPOSITO}[/red]")
+            raise Exit(code=1)
+    elif dgt_deposito_clave != "":
+        stmt = stmt.where(DgtDeposito.clave == dgt_deposito_clave)
+        dgt_rutas = db.scalars(stmt).all()
+        if not dgt_rutas:
+            console.print(f"[red]DgtDeposito con clave {dgt_ruta_clave} no encontrado o eliminado[/red]")
             raise Exit(code=1)
     else:
         dgt_rutas = db.scalars(stmt).all()
