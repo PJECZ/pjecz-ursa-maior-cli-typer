@@ -298,7 +298,7 @@ def _obtener_dgt_ruta(
         db.commit()
 
     # Mensajes finales
-    prueba = "(PRUEBA) " if probar else ""
+    prueba = "[yellow](PRUEBA)[/yellow] " if probar else ""
     if len(anomalias) > 0:
         for anomalia in anomalias:
             bitacora.warning(f"{prueba}Anomalía: {anomalia}")
@@ -601,7 +601,7 @@ def _copiar_dgt_ruta(
             copiados += 1
 
     # Mensajes finales
-    prueba = "(PRUEBA) " if probar else ""
+    prueba = "[yellow](PRUEBA)[/yellow] " if probar else ""
     if copiados > 0:
         bitacora.info(f"{prueba}Copiados: {copiados}")
         console.print(f"{prueba}Copiados: [green]{copiados}[/green]")

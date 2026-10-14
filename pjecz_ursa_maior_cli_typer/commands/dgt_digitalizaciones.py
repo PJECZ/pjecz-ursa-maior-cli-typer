@@ -345,7 +345,7 @@ def _obtener_dgt_ruta(
         db.commit()
 
     # Mensajes finales
-    prueba = "(PRUEBA) " if probar else ""
+    prueba = "[yellow](PRUEBA)[/yellow] " if probar else ""
     if len(anomalias) > 0:
         for anomalia in anomalias:
             bitacora.info(f"{prueba}Anomalía (fueron omitidos): {anomalia}")
@@ -629,7 +629,7 @@ def _entregar_dgt_ruta(
             progress.update(task, completed=tope)
 
     # Mensajes finales
-    prueba = "(PRUEBA) " if probar else ""
+    prueba = "[yellow](PRUEBA)[/yellow] " if probar else ""
     if enviados > 0:
         bitacora.info(f"{prueba}Enviados: {enviados}")
         console.print(f"{prueba}Enviados: [cyan]{enviados}[/cyan]")
