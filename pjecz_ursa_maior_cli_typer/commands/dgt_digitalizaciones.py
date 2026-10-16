@@ -4,7 +4,6 @@ DGT Digitalizaciones commandos
 
 import base64
 import logging
-import os
 import re
 from datetime import datetime
 from typing import Annotated
@@ -12,7 +11,6 @@ from uuid import UUID
 
 import pytz
 import requests
-from dotenv import load_dotenv
 from google.cloud import storage
 from rich.console import Console
 from rich.progress import Progress
@@ -20,6 +18,7 @@ from rich.table import Table
 from sqlalchemy import func, select
 from typer import Exit, Option, Typer
 
+from pjecz_ursa_maior_cli_typer.config.settings import get_settings
 from pjecz_ursa_maior_cli_typer.models.autoridades import Autoridad
 from pjecz_ursa_maior_cli_typer.models.dgt_depositos import DgtDeposito
 from pjecz_ursa_maior_cli_typer.models.dgt_digitalizaciones import DgtDigitalizacion
@@ -38,10 +37,9 @@ from pjecz_ursa_maior_cli_typer.utils.safe_string import safe_clave
 
 DGT_DEPOSITO_PROPOSITO = "DIGITALIZACIONES"
 DGT_TIPO_CLAVE = "EXP"  # Sólo el tipo EXPEDIENTE se va a buscar en vsp_digitalizaciones o se va a entregar a la DgtPlataforma
-TIMEOUT = 30  # Segundos para esperar respuesta de la API
 
-load_dotenv()  # Cargar variables de entorno desde .env
-TZ = pytz.timezone(os.getenv("TZ", "America/Mexico_City"))
+#load_dotenv()  # Cargar variables de entorno desde .env
+#TZ = pytz.timezone(os.getenv("TZ", "America/Mexico_City"))
 
 app = Typer(help="DGT Digitalizaciones comandos")
 
@@ -120,6 +118,10 @@ def _obtener_dgt_ruta(
     bitacora.info(f"Obtenido digitalizaciones de {dgt_ruta.clave}...")
     console.print(f"Obtenido digitalizaciones de [cyan]{dgt_ruta.clave}[/cyan]...")
 
+    # Huso horario
+    settings = get_settings()
+    tz = pytz.timezone(settings.TZ)
+
     # Inicializar variables
     archivo_urls_en_deposito = set()
     creados = omitidos = 0  # Contadores
@@ -189,7 +191,7 @@ def _obtener_dgt_ruta(
                 ).scalar_one_or_none()
 
                 # Si se encontró en dgt_entregas, tomamos sus datos
-                anio_actual = datetime.now(tz=TZ).year
+                anio_actual = datetime.now(tz=tz).year
                 if dgt_entrega:
                     expediente = dgt_entrega.expediente if dgt_entrega.expediente else None
                     expediente_anio = dgt_entrega.expediente_anio if 1800 <= dgt_entrega.expediente_anio <= anio_actual else None
@@ -387,7 +389,11 @@ def obtener(
     Si ninguna de las anteriores se da, se procesan todas las rutas (no eliminadas) de los depósitos.
     Siempre procesa rutas y depósitos con propósito DIGITALIZACIONES.
     """
-    ahora = datetime.now(tz=TZ)
+    # Huso horario
+    settings = get_settings()
+    tz = pytz.timezone(settings.TZ)
+
+    ahora = datetime.now(tz=tz)
     archivo_log = f"logs/dgt-digitalizaciones-{ahora.strftime('%Y-%m-%d-%H%M%S')}-obtener.log"
     bitacora = logging.getLogger(__name__)
     bitacora.setLevel(logging.INFO)
@@ -444,6 +450,10 @@ def _entregar_dgt_ruta(
     bitacora.info(f"Entregando digitalizaciones de {deposito_origen}/{dgt_ruta.directorio}...")
     console.print(f"Entregando digitalizaciones de [cyan]{deposito_origen}/{dgt_ruta.directorio}[/cyan]...")
 
+    # Huso horario
+    settings = get_settings()
+    tz = pytz.timezone(settings.TZ)
+
     # Inicializar variables
     enviados = insertados = omitidos = recibidos = 0  # Contadores
 
@@ -491,7 +501,8 @@ def _entregar_dgt_ruta(
         return
 
     # Inicializar el limit y el offset para segmentar los envíos
-    limit = 100
+    settings = get_settings()
+    limit = settings.LIMIT
     offset = 0
 
     # Barra de progreso
@@ -523,7 +534,7 @@ def _entregar_dgt_ruta(
                         url=plataforma.url,
                         json=payload,
                         headers={"X-Api-Key": plataforma.api_key},
-                        timeout=TIMEOUT,
+                        timeout=settings.TIMEOUT,
                     )
                     respuesta.raise_for_status()
                 except requests.exceptions.ConnectionError:
@@ -607,7 +618,7 @@ def _entregar_dgt_ruta(
 
                     # Actualizar la columna "entregado" con el tiempo actual
                     if expedientes_omitidos:
-                        ahora = datetime.now(tz=TZ)
+                        ahora = datetime.now(tz=tz)
                         for item in dgt_digitalizaciones:
                             # Los expedientes omitidos no se actualizan, quedarán pendientes para el futuro
                             if item.expediente in expedientes_omitidos:
@@ -657,7 +668,11 @@ def entregar(
     Si ninguna de las anteriores se da, se procesan todas las rutas (no eliminadas) de los depósitos.
     Siempre procesa rutas y depósitos con propósito DIGITALIZACIONES.
     """
-    ahora = datetime.now(tz=TZ)
+    # Huso horario
+    settings = get_settings()
+    tz = pytz.timezone(settings.TZ)
+
+    ahora = datetime.now(tz=tz)
     archivo_log = f"logs/dgt-digitalizaciones-{ahora.strftime('%Y-%m-%d-%H%M%S')}-entregar.log"
     bitacora = logging.getLogger(__name__)
     bitacora.setLevel(logging.INFO)

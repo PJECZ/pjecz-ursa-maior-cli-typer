@@ -97,11 +97,13 @@ def exportar_csv(autoridad_clave: str = ""):
     console = Console()
     console.print("Exportando la tabla vsp_digitalizaciones a un archivo CSV...")
     db = get_database()
-    config = get_settings()
-    timezone = pytz.timezone(config.TZ)
+
+    # Huso horario
+    settings = get_settings()
+    tz = pytz.timezone(settings.TZ)
 
     # Definir el nombre del archivo CSV con la fecha y hora actual
-    ahora_str = datetime.now(tz=timezone).strftime("%Y-%m-%d-%H%M%S")
+    ahora_str = datetime.now(tz=tz).strftime("%Y-%m-%d-%H%M%S")
     ruta = Path(EXPORTS_DIR, f"vsp_digitalizaciones_{ahora_str}.csv")
     if ruta.exists():
         console.print(f"[red]ERROR: {ruta} ya existe, no voy a sobreescribirlo.")
@@ -147,8 +149,10 @@ def exportar_xlsx(autoridad_clave: str = ""):
     console = Console()
     console.print("Exportando la tabla vsp_digitalizaciones a un archivo XLSX...")
     db = get_database()
-    config = get_settings()
-    timezone = pytz.timezone(config.TZ)
+
+    # Huso horario
+    settings = get_settings()
+    tz = pytz.timezone(settings.TZ)
 
     # Iniciar el archivo XLSX
     libro = Workbook()
@@ -187,7 +191,7 @@ def exportar_xlsx(autoridad_clave: str = ""):
         contador += 1
 
     # Definir el nombre del archivo XLSX con la fecha y hora actual
-    ahora_str = datetime.now(tz=timezone).strftime("%Y-%m-%d-%H%M%S")
+    ahora_str = datetime.now(tz=tz).strftime("%Y-%m-%d-%H%M%S")
     ruta = Path(EXPORTS_DIR, f"vsp_digitalizaciones_{ahora_str}.xlsx")
 
     # Guardar el archivo XLSX
