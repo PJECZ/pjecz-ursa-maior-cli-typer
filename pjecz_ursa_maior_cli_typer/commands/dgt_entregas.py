@@ -4,13 +4,11 @@ DGT Entregas commandos
 
 import base64
 import logging
-import os
 from datetime import datetime
 from typing import Annotated
 from uuid import uuid4
 
 import pytz
-from dotenv import load_dotenv
 from google.api_core.exceptions import NotFound
 from google.cloud import storage
 from rich.console import Console
@@ -19,6 +17,7 @@ from rich.table import Table
 from sqlalchemy import func, select
 from typer import Exit, Option, Typer
 
+from pjecz_ursa_maior_cli_typer.config.settings import get_settings
 from pjecz_ursa_maior_cli_typer.models.autoridades import Autoridad
 from pjecz_ursa_maior_cli_typer.models.dgt_depositos import DgtDeposito
 from pjecz_ursa_maior_cli_typer.models.dgt_digitalizaciones import DgtDigitalizacion
@@ -35,8 +34,8 @@ COPIAR_PROPOSITO_ORIGEN = "ENTREGAS"  # Los depósitos de DgtEntrega como origen
 COPIAR_PROPOSITO_DESTINO = "DIGITALIZACIONES"  # Los depósitos de DgtDigitalizacion como destino de la copia
 DGT_TIPO_CLAVE = "EXP"  # Cuando sea tipo EXPEDIENTE se va a buscar en vsp_digitalizaciones
 
-load_dotenv()  # Cargar variables de entorno desde .env
-TZ = pytz.timezone(os.getenv("TZ", "America/Mexico_City"))
+#load_dotenv()  # Cargar variables de entorno desde .env
+#TZ = pytz.timezone(os.getenv("TZ", "America/Mexico_City"))
 
 app = Typer(help="DGT Entregas comandos")
 
@@ -332,7 +331,11 @@ def obtener(
     Si ninguna de las anteriores se da, se procesan todas las rutas (no eliminadas) de los depósitos.
     Siempre procesa rutas y depósitos con propósito ENTREGAS.
     """
-    ahora = datetime.now(tz=TZ)
+    # Huso horario
+    settings = get_settings()
+    tz = pytz.timezone(settings.TZ)
+
+    ahora = datetime.now(tz=tz)
     archivo_log = f"logs/dgt-entregas-{ahora.strftime('%Y-%m-%d-%H%M%S')}-obtener.log"
     bitacora = logging.getLogger(__name__)
     bitacora.setLevel(logging.INFO)
@@ -629,7 +632,11 @@ def copiar(
     Del destino su DgtDeposito.proposito debe ser DIGITALIZACIONES
     Si no se indica la clave de la DgtRuta de origen, se procesan todas las DgtRutas con propósito ENTREGAS y estatus "A".
     """
-    ahora = datetime.now(tz=TZ)
+    # Huso horario
+    settings = get_settings()
+    tz = pytz.timezone(settings.TZ)
+
+    ahora = datetime.now(tz=tz)
     archivo_log = f"logs/dgt-entregas-{ahora.strftime('%Y-%m-%d-%H%M%S')}-copiar.log"
     bitacora = logging.getLogger(__name__)
     bitacora.setLevel(logging.INFO)

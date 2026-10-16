@@ -15,8 +15,10 @@ class Settings(BaseSettings):
     DB_HOST: str = "localhost"
     DB_PORT: int = 5432
     DB_NAME: str = "database"
+    LIMIT: int = 20
     SALT: str = "some_random_salt"
     SQLALCHEMY_DATABASE_URI: str = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    TIMEOUT: int = 30
     TZ: str = "America/Mexico_City"
 
     class Config:
