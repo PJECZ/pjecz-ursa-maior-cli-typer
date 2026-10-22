@@ -33,46 +33,56 @@ Crear un archivo `.bashrc` que facilite la carga de las variables de entorno y d
 ```bash
 # pjecz-ursa-maior-cli-typer
 
-if [ -f ~/.bashrc ]; then
+if [ -f ~/.bashrc ]
+then
     . ~/.bashrc
 fi
 
-figlet Ursa Maior CLI Typer
+if command -v figlet &> /dev/null
+then
+    figlet Ursa Maior CLI Typer
+else
+    echo "== Ursa Maior CLI Typer"
+fi
 echo
 
-#
-# Para que la cuenta de servicio rclone-guivaloz-hereje@justicia-digital-gob-mx.iam.gserviceaccount.com
-# consulte los depósitos en pjecz-gob-mx se agregó en el IAM con los roles tipicos de storage
-#
-export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.google-application-credentials/justicia-digital-gob-mx-guivaloz-en-hereje.json
+# Google Application Credentials
+export GOOGLE_APPLICATION_CREDENTIALS=
 
-source .env && export $(sed '/^#/d' .env | cut -d= -f1)
-echo "-- Variables de entorno"
-echo "   DB_HOST: ${DB_HOST}"
-echo "   DB_PORT: ${DB_PORT}"
-echo "   DB_NAME: ${DB_NAME}"
-echo "   DB_USER: ${DB_USER}"
-echo "   DB_PASS: ${DB_PASS}"
-echo "   GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS}"
-echo "   SALT: ${SALT}"
-echo "   SQLALCHEMY_DATABASE_URI: ${SQLALCHEMY_DATABASE_URI}"
-echo
-export PGHOST=$DB_HOST
-export PGPORT=$DB_PORT
-export PGDATABASE=$DB_NAME
-export PGUSER=$DB_USER
-export PGPASSWORD=$DB_PASS
+if [ -f .env ]
+then
+    echo "-- Variables de entorno"
+    export $(grep -v '^#' .env | xargs)
+    echo "   DB_HOST: ${DB_HOST}"
+    echo "   DB_PORT: ${DB_PORT}"
+    echo "   DB_NAME: ${DB_NAME}"
+    echo "   DB_USER: ${DB_USER}"
+    echo "   DB_PASS: ${DB_PASS}"
+    echo "   GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS}"
+    echo "   SALT: ${SALT}"
+    echo "   SQLALCHEMY_DATABASE_URI: ${SQLALCHEMY_DATABASE_URI}"
+    echo "   TZ: ${TZ}"
+    echo
+    export PGHOST=$DB_HOST
+    export PGPORT=$DB_PORT
+    export PGDATABASE=$DB_NAME
+    export PGUSER=$DB_USER
+    export PGPASSWORD=$DB_PASS
+fi
 
-echo "-- Python Virtual Environment"
-source .venv/bin/activate
-echo "   $(python3 --version)"
-export PYTHONPATH=$(pwd)
-echo "   PYTHONPATH: ${PYTHONPATH}"
-echo
-alias cli="uv run ${PWD}/pjecz_ursa_maior_cli_typer/app.py"
-echo "-- Ejecutar el CLI"
-echo "   cli --help"
-echo
+if [ -d .venv ]
+then
+    echo "-- Python Virtual Environment"
+    source .venv/bin/activate
+    echo "   $(python3 --version)"
+    export PYTHONPATH=$(pwd)
+    echo "   PYTHONPATH: ${PYTHONPATH}"
+    echo
+    alias cli="uv run ${PWD}/pjecz_ursa_maior_cli_typer/app.py"
+    echo "-- Ejecutar el CLI"
+    echo "   cli --help"
+    echo
+fi
 ```
 
 ## Uso
