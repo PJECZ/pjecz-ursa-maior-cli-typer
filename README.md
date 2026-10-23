@@ -46,13 +46,18 @@ else
 fi
 echo
 
-# Google Application Credentials
-export GOOGLE_APPLICATION_CREDENTIALS=
+export GOOGLE_APPLICATION_CREDENTIALS=$HOME/.google-application-credentials/service-account.json
+if [ -f $GOOGLE_APPLICATION_CREDENTIALS ]
+then
+    echo "-- Google Application Credentials"
+    echo "   ${GOOGLE_APPLICATION_CREDENTIALS}"
+    echo
+fi
 
 if [ -f .env ]
 then
-    echo "-- Variables de entorno"
     export $(grep -v '^#' .env | xargs)
+    echo "-- Variables de entorno"
     echo "   DB_HOST: ${DB_HOST}"
     echo "   DB_PORT: ${DB_PORT}"
     echo "   DB_NAME: ${DB_NAME}"
@@ -63,11 +68,6 @@ then
     echo "   SQLALCHEMY_DATABASE_URI: ${SQLALCHEMY_DATABASE_URI}"
     echo "   TZ: ${TZ}"
     echo
-    export PGHOST=$DB_HOST
-    export PGPORT=$DB_PORT
-    export PGDATABASE=$DB_NAME
-    export PGUSER=$DB_USER
-    export PGPASSWORD=$DB_PASS
 fi
 
 if [ -d .venv ]
