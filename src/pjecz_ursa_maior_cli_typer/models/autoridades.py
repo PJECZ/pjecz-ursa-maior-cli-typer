@@ -5,7 +5,7 @@ Autoridades modelos
 from sqlalchemy import ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from pjecz_ursa_maior_cli_typer.utils.database import Base
+from pjecz_ursa_maior_cli_typer.core.database import Base
 
 
 class Autoridad(Base):
@@ -46,7 +46,6 @@ class Autoridad(Base):
     dgt_digitalizaciones: Mapped[list["DgtDigitalizacion"]] = relationship(back_populates="autoridad")
     dgt_entregas: Mapped[list["DgtEntrega"]] = relationship(back_populates="autoridad")
     dgt_plataforma_autoridad: Mapped[list["DgtPlataformaAutoridad"]] = relationship(back_populates="autoridad")
-    vsp_digitalizaciones: Mapped[list["VspDigitalizacion"]] = relationship(back_populates="autoridad")
 
     def __repr__(self):
         """Representación"""

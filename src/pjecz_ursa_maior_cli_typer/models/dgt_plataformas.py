@@ -8,7 +8,7 @@ from sqlalchemy import String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from pjecz_ursa_maior_cli_typer.utils.database import Base
+from pjecz_ursa_maior_cli_typer.core.database import Base
 
 
 class DgtPlataforma(Base):

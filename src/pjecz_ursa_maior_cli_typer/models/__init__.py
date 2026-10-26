@@ -12,10 +12,26 @@ from pjecz_ursa_maior_cli_typer.models.dgt_entregas import DgtEntrega
 from pjecz_ursa_maior_cli_typer.models.dgt_entregas_bitacoras import DgtEntregaBitacora
 from pjecz_ursa_maior_cli_typer.models.dgt_plataformas import DgtPlataforma
 from pjecz_ursa_maior_cli_typer.models.dgt_plataformas_autoridades import DgtPlataformaAutoridad
-from pjecz_ursa_maior_cli_typer.models.dgt_plataformas_endpoints_bitacoras import DgtPlataformaEndpointBitacora
 from pjecz_ursa_maior_cli_typer.models.dgt_plataformas_endpoints import DgtPlataformaEndpoint
+from pjecz_ursa_maior_cli_typer.models.dgt_plataformas_endpoints_bitacoras import DgtPlataformaEndpointBitacora
 from pjecz_ursa_maior_cli_typer.models.dgt_rutas import DgtRuta
 from pjecz_ursa_maior_cli_typer.models.dgt_tipos import DgtTipo
 from pjecz_ursa_maior_cli_typer.models.distritos import Distrito
 from pjecz_ursa_maior_cli_typer.models.materias import Materia
-from pjecz_ursa_maior_cli_typer.models.vsp_digitalizaciones import VspDigitalizacion
+
+__all__ = [
+    "Autoridad",
+    "DgtDeposito",
+    "DgtDigitalizacion",
+    "DgtDigitalizacionBitacora",
+    "DgtEntrega",
+    "DgtEntregaBitacora",
+    "DgtPlataforma",
+    "DgtPlataformaAutoridad",
+    "DgtPlataformaEndpoint",
+    "DgtPlataformaEndpointBitacora",
+    "DgtRuta",
+    "DgtTipo",
+    "Distrito",
+    "Materia",
+]

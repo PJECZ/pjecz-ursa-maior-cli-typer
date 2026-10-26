@@ -1,5 +1,5 @@
 """
-DGT Entregas modelos
+DGT Digitalizaciones modelos
 """
 
 import uuid
@@ -10,23 +10,23 @@ from sqlalchemy import ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from pjecz_ursa_maior_cli_typer.utils.database import Base
+from pjecz_ursa_maior_cli_typer.core.database import Base
 
 
-class DgtEntrega(Base):
-    """DgtEntrega"""
+class DgtDigitalizacion(Base):
+    """DgtDigitalizacion"""
 
     # Nombre de la tabla
-    __tablename__ = "dgt_entregas"
+    __tablename__ = "dgt_digitalizaciones"
 
     # Clave primaria
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
     # Claves foráneas
     autoridad_id: Mapped[int] = mapped_column(ForeignKey("autoridades.id"))
-    autoridad: Mapped["Autoridad"] = relationship(back_populates="dgt_entregas")
-    dgt_ruta_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("dgt_rutas.id"))
-    dgt_ruta: Mapped["DgtRuta"] = relationship(back_populates="dgt_entregas")
+    autoridad: Mapped["Autoridad"] = relationship(back_populates="dgt_digitalizaciones")
+    dgt_ruta_id: Mapped[int] = mapped_column(ForeignKey("dgt_rutas.id"))
+    dgt_ruta: Mapped["DgtRuta"] = relationship(back_populates="dgt_digitalizaciones")
 
     # Columnas con datos del archivo en el depósito
     archivo_nombre: Mapped[str] = mapped_column(String(256))
@@ -38,22 +38,20 @@ class DgtEntrega(Base):
     archivo_tamano: Mapped[int]
 
     # Columnas de control
-    expediente: Mapped[Optional[str]] = mapped_column(String(16))
-    expediente_anio: Mapped[Optional[int]]
-    expediente_num: Mapped[Optional[int]]
+    expediente: Mapped[str] = mapped_column(String(16))
+    expediente_anio: Mapped[int]
+    expediente_num: Mapped[int]
     descripcion: Mapped[Optional[str]] = mapped_column(String(256))
     es_anomalo: Mapped[bool] = mapped_column(default=False)
+    entregado: Mapped[Optional[datetime]]
 
     # Columnas con el último evento de la bitácora, actualizadas por un trigger
     ultimo_evento: Mapped[str] = mapped_column(String(24))
     ultimo_evento_creado: Mapped[datetime]
 
-    # Columnas que se define cuando hay una copia en otra tabla
-    archivo_uuid: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))  # Ya fue entregado a dgt_digitalizaciones
-
     # Hijos
-    dgt_entregas_bitacoras: Mapped[list["DgtEntregaBitacora"]] = relationship(back_populates="dgt_entrega")
+    dgt_digitalizaciones_bitacoras: Mapped[list["DgtDigitalizacionBitacora"]] = relationship(back_populates="dgt_digitalizacion")
 
     def __repr__(self):
         """Representación"""
-        return f"<DgtEntrega {self.id}>"
+        return f"<DgtDigitalizacion {self.id}>"
