@@ -106,7 +106,7 @@ def consultar(
     console.print(tabla)
 
 
-def _agregar_bitacora(
+def _agregar_bitacora_al_obtener(
     session: Session,
     dgt_digitalizacion: DgtDigitalizacion,
     evento: str,
@@ -168,9 +168,11 @@ def _obtener_dgt_ruta(
         blobs = [blob for blob in cliente.list_blobs(deposito, prefix=f"{directorio}/") if not blob.name.endswith("/")]
         archivo_uuids_en_deposito = set()
 
+        # Barra de progreso
         with Progress() as progress:
             task = progress.add_task("Obteniendo digitalizaciones:", total=len(blobs))
 
+            # Bucle por cada archivo en el depósito en la ruta dada
             for blob in blobs:
                 progress.update(task, advance=1)
 
@@ -190,6 +192,7 @@ def _obtener_dgt_ruta(
                 archivo_uuid = UUID(archivo_uuid_str)
                 archivo_uuids_en_deposito.add(archivo_uuid)
 
+                # Obtener el registro de la digitalización
                 dgt_digitalizacion = dgt_digitalizaciones.get(archivo_uuid)
 
                 # A) No existe, crear un nuevo DgtDigitalizacion con el evento CREADO
@@ -246,7 +249,7 @@ def _obtener_dgt_ruta(
                     )
                     session.add(dgt_digitalizacion)
                     session.flush()
-                    _agregar_bitacora(session, dgt_digitalizacion, "CREADO")
+                    _agregar_bitacora_al_obtener(session, dgt_digitalizacion, "CREADO")
                     continue
 
                 # B) Ya existe, coinciden el md5 y el crc32c y no fue eliminado, omitir
@@ -273,7 +276,7 @@ def _obtener_dgt_ruta(
                 dgt_digitalizacion.archivo_tamano = archivo_tamano
                 dgt_digitalizacion.ultimo_evento = "MODIFICADO"
                 dgt_digitalizacion.ultimo_evento_creado = archivo_actualizado
-                _agregar_bitacora(session, dgt_digitalizacion, "MODIFICADO", md5_old, crc32c_old)
+                _agregar_bitacora_al_obtener(session, dgt_digitalizacion, "MODIFICADO", md5_old, crc32c_old)
 
         # D) Están en la base de datos como CREADO o MODIFICADO pero ya no en el depósito, actualizar con el evento ELIMINADO
         for archivo_uuid, dgt_digitalizacion in dgt_digitalizaciones.items():
@@ -284,7 +287,7 @@ def _obtener_dgt_ruta(
                 continue
             dgt_digitalizacion.ultimo_evento = "ELIMINADO"
             dgt_digitalizacion.ultimo_evento_creado = datetime.now(tz=pytz.UTC)
-            _agregar_bitacora(
+            _agregar_bitacora_al_obtener(
                 session, dgt_digitalizacion, "ELIMINADO", dgt_digitalizacion.archivo_md5, dgt_digitalizacion.archivo_crc32c
             )
 
@@ -430,9 +433,11 @@ def _entregar_dgt_ruta(
             console.print(f"[yellow]{mensaje}[/yellow]")
             return
 
+        # Barra de progreso
         with Progress() as progress:
             task = progress.add_task("Entregando digitalizaciones:", total=digitalizaciones_total)
 
+            # Bucle por payloads
             for offset in range(0, digitalizaciones_total, limit):
                 paquete = dgt_digitalizaciones[offset : offset + limit]
                 tope = offset + len(paquete)

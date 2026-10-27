@@ -103,7 +103,7 @@ def consultar(
     console.print(tabla)
 
 
-def _agregar_bitacora(session: Session, dgt_entrega: DgtEntrega, evento: str, md5_old: str = "", crc32c_old: str = ""):
+def _agregar_bitacora_al_obtener(session: Session, dgt_entrega: DgtEntrega, evento: str, md5_old: str = "", crc32c_old: str = ""):
     """Agregar un registro a la bitácora con los datos actuales del DgtEntrega"""
     eliminado = evento == "ELIMINADO"
     session.add(
@@ -156,9 +156,11 @@ def _obtener_dgt_ruta(
         blobs = [blob for blob in cliente.list_blobs(deposito, prefix=f"{directorio}/") if not blob.name.endswith("/")]
         archivo_urls_en_deposito = set()
 
+        # Barra de progreso
         with Progress() as progress:
             task = progress.add_task("Obteniendo entregas:", total=len(blobs))
 
+            # Bucle por cada archivo en el depósito en la ruta dada
             for blob in blobs:
                 progress.update(task, advance=1)
 
@@ -175,6 +177,7 @@ def _obtener_dgt_ruta(
                 num, anio, desc = parsear_num_anio_desc(archivo_nombre.rsplit(".", maxsplit=1)[0])
                 es_anomalo = not num or not anio
 
+                # Buscar la entrega
                 dgt_entrega = dgt_entregas.get(archivo_url)
 
                 # A) No existe, crear un nuevo DgtEntrega con el evento CREADO
@@ -204,7 +207,7 @@ def _obtener_dgt_ruta(
                     )
                     session.add(dgt_entrega)
                     session.flush()
-                    _agregar_bitacora(session, dgt_entrega, "CREADO")
+                    _agregar_bitacora_al_obtener(session, dgt_entrega, "CREADO")
                     continue
 
                 # B) Ya existe, coinciden el md5 y el crc32c y no fue eliminado, omitir
@@ -229,7 +232,7 @@ def _obtener_dgt_ruta(
                 dgt_entrega.archivo_tamano = archivo_tamano
                 dgt_entrega.ultimo_evento = "MODIFICADO"
                 dgt_entrega.ultimo_evento_creado = archivo_actualizado
-                _agregar_bitacora(session, dgt_entrega, "MODIFICADO", md5_old, crc32c_old)
+                _agregar_bitacora_al_obtener(session, dgt_entrega, "MODIFICADO", md5_old, crc32c_old)
 
         # D) Están en la base de datos como CREADO o MODIFICADO pero ya no en el depósito, actualizar con el evento ELIMINADO
         for archivo_url, dgt_entrega in dgt_entregas.items():
@@ -240,7 +243,7 @@ def _obtener_dgt_ruta(
                 continue
             dgt_entrega.ultimo_evento = "ELIMINADO"
             dgt_entrega.ultimo_evento_creado = datetime.now(tz=pytz.UTC)
-            _agregar_bitacora(session, dgt_entrega, "ELIMINADO", dgt_entrega.archivo_md5, dgt_entrega.archivo_crc32c)
+            _agregar_bitacora_al_obtener(session, dgt_entrega, "ELIMINADO", dgt_entrega.archivo_md5, dgt_entrega.archivo_crc32c)
 
     # Mostrar los listados y los contadores
     prueba = "[yellow](PRUEBA)[/yellow] " if probar else ""
@@ -320,7 +323,7 @@ def obtener(
         _obtener_dgt_ruta(console, bitacora, cliente, dgt_ruta_id, probar)
 
 
-def _agregar_bitacora_digitalizacion(
+def _agregar_bitacora_al_copiar(
     session: Session,
     dgt_digitalizacion: DgtDigitalizacion,
     evento: str,
@@ -383,13 +386,15 @@ def _copiar_dgt_ruta(
             .all()
         )
 
+        # Barra de progreso
         with Progress() as progress:
             task = progress.add_task("Copiando archivos de entregas a digitalizaciones:", total=len(dgt_entregas))
 
+            # Bucle por cada entrega
             for dgt_entrega in dgt_entregas:
                 progress.update(task, advance=1)
 
-                # Si el archivo ya no está en el depósito de origen, no se puede copiar
+                # Si el archivo ya no está en el depósito de origen, no se debe copiar
                 if dgt_entrega.ultimo_evento == "ELIMINADO":
                     omitidos += 1
                     continue
@@ -419,7 +424,7 @@ def _copiar_dgt_ruta(
                             continue
                         dgt_digitalizacion.ultimo_evento = dgt_entrega.ultimo_evento
                         dgt_digitalizacion.ultimo_evento_creado = datetime.now(tz=pytz.UTC)
-                        _agregar_bitacora_digitalizacion(
+                        _agregar_bitacora_al_copiar(
                             session,
                             dgt_digitalizacion,
                             dgt_entrega.ultimo_evento,
@@ -481,7 +486,7 @@ def _copiar_dgt_ruta(
                     dgt_digitalizacion.archivo_tamano = archivo_tamano
                     dgt_digitalizacion.ultimo_evento = evento
                     dgt_digitalizacion.ultimo_evento_creado = archivo_actualizado
-                    _agregar_bitacora_digitalizacion(session, dgt_digitalizacion, evento, md5_old, crc32c_old)
+                    _agregar_bitacora_al_copiar(session, dgt_digitalizacion, evento, md5_old, crc32c_old)
                 else:
                     # Insertar un nuevo DgtDigitalizacion y marcar la entrega como copiada con su UUID
                     dgt_digitalizacion = DgtDigitalizacion(
@@ -505,7 +510,7 @@ def _copiar_dgt_ruta(
                     )
                     session.add(dgt_digitalizacion)
                     session.flush()
-                    _agregar_bitacora_digitalizacion(session, dgt_digitalizacion, evento)
+                    _agregar_bitacora_al_copiar(session, dgt_digitalizacion, evento)
                     dgt_entrega.archivo_uuid = archivo_uuid
 
                 # Guardar por cada archivo para que el depósito y la base de datos no se desincronicen
