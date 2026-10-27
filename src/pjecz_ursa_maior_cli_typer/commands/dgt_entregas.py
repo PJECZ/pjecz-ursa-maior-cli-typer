@@ -71,10 +71,10 @@ def consultar(
     with session_scope() as session:
         for item in session.execute(stmt).all():
             tabla.add_row(
+                item.archivo_actualizado.strftime("%Y-%m-%d %H:%M:%S"),
                 item.autoridad_clave,
                 item.dgt_ruta_clave,
                 item.archivo_nombre,
-                item.archivo_actualizado.strftime("%Y-%m-%d %H:%M:%S"),
                 str(item.archivo_tamano),
                 item.ultimo_evento,
                 "Sí" if item.es_anomalo else "No",
