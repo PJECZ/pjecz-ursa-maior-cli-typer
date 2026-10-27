@@ -373,12 +373,13 @@ def _copiar_dgt_ruta(
         bucket_origen = cliente.bucket(deposito_origen)
         bucket_destino = cliente.bucket(deposito_destino)
 
-        # Consultar los DgtEntrega de la ruta, omitiendo los anómalos
+        # Consultar los DgtEntrega de la ruta, omitiendo los anómalos y los eliminados
         dgt_entregas = (
             session.execute(
                 select(DgtEntrega)
                 .where(DgtEntrega.dgt_ruta_id == dgt_ruta_origen.id)
                 .where(DgtEntrega.es_anomalo == False)
+                .where(DgtEntrega.ultimo_evento != "ELIMINADO")
                 .where(DgtEntrega.estatus == "A")
                 .order_by(DgtEntrega.ultimo_evento_creado)
             )
@@ -394,11 +395,6 @@ def _copiar_dgt_ruta(
             for dgt_entrega in dgt_entregas:
                 progress.update(task, advance=1)
 
-                # Si el archivo ya no está en el depósito de origen, no se debe copiar
-                if dgt_entrega.ultimo_evento == "ELIMINADO":
-                    omitidos += 1
-                    continue
-
                 # Buscar el DgtDigitalizacion por el UUID que se le asignó a la entrega
                 dgt_digitalizacion = None
                 if dgt_entrega.archivo_uuid:
@@ -411,8 +407,9 @@ def _copiar_dgt_ruta(
                         and dgt_digitalizacion.archivo_crc32c == dgt_entrega.archivo_crc32c
                     )
 
-                    # A) Son iguales el último evento, el md5 y el crc32c, omitir
-                    if mismo_archivo and dgt_digitalizacion.ultimo_evento == dgt_entrega.ultimo_evento:
+                    # A) Son iguales el md5 y el crc32c, omitir
+                    # Antes se tenía and dgt_digitalizacion.ultimo_evento == dgt_entrega.ultimo_evento
+                    if mismo_archivo:
                         omitidos += 1
                         continue
 
