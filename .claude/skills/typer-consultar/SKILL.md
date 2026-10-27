@@ -108,8 +108,8 @@ Todos los filtros (salvo `offset` y `limit`) son opcionales con valor por defect
 
 | Tipo de filtro | Firma | Cláusula where |
 |---|---|---|
-| Clave de un padre | `distrito_clave: str \| None = None` | `if distrito_clave and (distrito_clave := safe_clave(distrito_clave)):`<br>`    where_clauses.append(Distrito.clave == distrito_clave)` |
-| Clave propia | `clave: str \| None = None` | `if clave and (clave := safe_clave(clave)):`<br>`    where_clauses.append(<Modelo>.clave == clave)` |
+| Clave de un padre | `distrito_clave: str \| None = None` | `if distrito_clave and (distrito_clave := safe_clave(distrito_clave, max_len=64)):`<br>`    where_clauses.append(Distrito.clave == distrito_clave)` |
+| Clave propia | `clave: str \| None = None` | `if clave and (clave := safe_clave(clave, max_len=64)):`<br>`    where_clauses.append(<Modelo>.clave == clave)` |
 | Texto (búsqueda parcial) | `descripcion: str \| None = None` | `if descripcion and (descripcion := safe_string(descripcion)):`<br>`    where_clauses.append(<Modelo>.descripcion.like("%" + descripcion + "%"))` |
 | Booleano | `es_activo: bool \| None = None` | `if es_activo is not None:`<br>`    where_clauses.append(<Modelo>.es_activo == es_activo)` |
 | Entero / ID de padre | `distrito_id: int \| None = None` | `if distrito_id is not None:`<br>`    where_clauses.append(<Modelo>.distrito_id == distrito_id)` |
