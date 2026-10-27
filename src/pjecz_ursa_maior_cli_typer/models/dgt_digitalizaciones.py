@@ -25,7 +25,7 @@ class DgtDigitalizacion(Base):
     # Claves foráneas
     autoridad_id: Mapped[int] = mapped_column(ForeignKey("autoridades.id"))
     autoridad: Mapped["Autoridad"] = relationship(back_populates="dgt_digitalizaciones")
-    dgt_ruta_id: Mapped[int] = mapped_column(ForeignKey("dgt_rutas.id"))
+    dgt_ruta_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("dgt_rutas.id"))
     dgt_ruta: Mapped["DgtRuta"] = relationship(back_populates="dgt_digitalizaciones")
 
     # Columnas con datos del archivo en el depósito
