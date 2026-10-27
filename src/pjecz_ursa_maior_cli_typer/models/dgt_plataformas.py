@@ -21,6 +21,7 @@ class DgtPlataforma(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
     # Columnas
+    clave: Mapped[str] = mapped_column(String(64), unique=True)
     descripcion: Mapped[str] = mapped_column(String(256), unique=True)
 
     # Columnas que NO deben ser expuestas
