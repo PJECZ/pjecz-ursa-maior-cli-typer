@@ -8,7 +8,6 @@ from sqlalchemy import JSON, Enum, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from pjecz_ursa_maior_cli_typer.models import dgt_plataformas_endpoints_bitacoras
 from pjecz_ursa_maior_cli_typer.core.database import Base
 
 
