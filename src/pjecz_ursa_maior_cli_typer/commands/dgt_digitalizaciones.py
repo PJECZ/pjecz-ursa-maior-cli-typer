@@ -4,11 +4,13 @@ DGT Digitalizaciones commandos
 
 import base64
 import logging
+import re
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
 import pytz
+import requests
 from google.cloud import storage
 from rich.console import Console
 from rich.progress import Progress
@@ -27,6 +29,10 @@ from pjecz_ursa_maior_cli_typer.models.dgt_depositos import DgtDeposito
 from pjecz_ursa_maior_cli_typer.models.dgt_digitalizaciones import DgtDigitalizacion
 from pjecz_ursa_maior_cli_typer.models.dgt_digitalizaciones_bitacoras import DgtDigitalizacionBitacora
 from pjecz_ursa_maior_cli_typer.models.dgt_entregas import DgtEntrega
+from pjecz_ursa_maior_cli_typer.models.dgt_plataformas import DgtPlataforma
+from pjecz_ursa_maior_cli_typer.models.dgt_plataformas_autoridades import DgtPlataformaAutoridad
+from pjecz_ursa_maior_cli_typer.models.dgt_plataformas_endpoints import DgtPlataformaEndpoint
+from pjecz_ursa_maior_cli_typer.models.dgt_plataformas_endpoints_bitacoras import DgtPlataformaEndpointBitacora
 from pjecz_ursa_maior_cli_typer.models.dgt_rutas import DgtRuta
 
 PROPOSITO = "DIGITALIZACIONES"  # Sólo se procesan los depósitos con este propósito
@@ -194,9 +200,13 @@ def _obtener_dgt_ruta(
                         continue
 
                     # Tomar los datos del expediente del DgtEntrega que fue copiado con este UUID
-                    dgt_entrega = session.execute(
-                        select(DgtEntrega).where(DgtEntrega.archivo_uuid == archivo_uuid).where(DgtEntrega.estatus == "A")
-                    ).scalars().first()
+                    dgt_entrega = (
+                        session.execute(
+                            select(DgtEntrega).where(DgtEntrega.archivo_uuid == archivo_uuid).where(DgtEntrega.estatus == "A")
+                        )
+                        .scalars()
+                        .first()
+                    )
                     if dgt_entrega is not None and not dgt_entrega.es_anomalo:
                         expediente = dgt_entrega.expediente
                         expediente_anio = dgt_entrega.expediente_anio
@@ -358,3 +368,247 @@ def obtener(
     cliente = storage.Client()
     for dgt_ruta_id in dgt_rutas_ids:
         _obtener_dgt_ruta(console, bitacora, cliente, dgt_ruta_id, probar)
+
+
+def _entregar_dgt_ruta(
+    console: Console,
+    bitacora: logging.Logger,
+    dgt_ruta_id,
+    limit: int,
+    timeout: int,
+    tz,
+    probar: bool,
+):
+    """Enviar a la Plataforma las digitalizaciones de una ruta que no han sido entregadas"""
+    with session_scope() as session:
+        dgt_ruta = session.get(DgtRuta, dgt_ruta_id)
+        bitacora.info(f"Entregando digitalizaciones de {dgt_ruta.clave}...")
+        console.print(f"Entregando digitalizaciones de [cyan]{dgt_ruta.clave}[/cyan]...")
+
+        # Inicializar contadores
+        enviados = insertados = omitidos = recibidos = 0
+
+        # Consultar los DgtDigitalizacion de la ruta, omitiendo los entregados, los anómalos y los eliminados
+        dgt_digitalizaciones = (
+            session.execute(
+                select(DgtDigitalizacion)
+                .where(DgtDigitalizacion.dgt_ruta_id == dgt_ruta.id)
+                .where(DgtDigitalizacion.entregado.is_(None))
+                .where(DgtDigitalizacion.es_anomalo == False)
+                .where(DgtDigitalizacion.ultimo_evento != "ELIMINADO")
+                .where(DgtDigitalizacion.estatus == "A")
+                .order_by(DgtDigitalizacion.expediente_anio, DgtDigitalizacion.expediente_num)
+            )
+            .scalars()
+            .all()
+        )
+        digitalizaciones_total = len(dgt_digitalizaciones)
+        if digitalizaciones_total == 0:
+            bitacora.info(f"No hay digitalizaciones por entregar en {dgt_ruta.clave}")
+            console.print("No hay digitalizaciones por entregar")
+            return
+
+        # Consultar la plataforma y su endpoint para insertar a partir de la autoridad de la ruta
+        plataforma = session.execute(
+            select(
+                DgtPlataforma.api_key, DgtPlataformaEndpoint.id.label("dgt_plataforma_endpoint_id"), DgtPlataformaEndpoint.ruta
+            )
+            .select_from(Autoridad)
+            .join(DgtPlataformaAutoridad, DgtPlataformaAutoridad.autoridad_id == Autoridad.id)
+            .join(DgtPlataforma, DgtPlataformaAutoridad.dgt_plataforma_id == DgtPlataforma.id)
+            .join(DgtPlataformaEndpoint, DgtPlataformaEndpoint.dgt_plataforma_id == DgtPlataforma.id)
+            .where(Autoridad.clave == dgt_ruta.autoridad_clave)
+            .where(DgtPlataformaAutoridad.estatus == "A")
+            .where(DgtPlataforma.estatus == "A")
+            .where(DgtPlataformaEndpoint.proposito == "INSERTAR")
+            .where(DgtPlataformaEndpoint.metodo == "POST")
+            .where(DgtPlataformaEndpoint.estatus == "A")
+        ).first()
+        if plataforma is None:
+            mensaje = f"Se omite {dgt_ruta.clave} porque la autoridad {dgt_ruta.autoridad_clave} no tiene plataforma con endpoint INSERTAR"
+            bitacora.warning(mensaje)
+            console.print(f"[yellow]{mensaje}[/yellow]")
+            return
+
+        with Progress() as progress:
+            task = progress.add_task("Entregando digitalizaciones:", total=digitalizaciones_total)
+
+            for offset in range(0, digitalizaciones_total, limit):
+                paquete = dgt_digitalizaciones[offset : offset + limit]
+                tope = offset + len(paquete)
+                bucle_str = f"Desde {offset} hasta {tope} de {digitalizaciones_total}"
+                progress.update(task, advance=len(paquete))
+
+                # Armar el payload
+                listado = []
+                for item in paquete:
+                    listado.append(
+                        {
+                            "autoridadClave": dgt_ruta.autoridad_clave,
+                            "numeroExpediente": item.expediente,
+                            "url": item.archivo_public_url,
+                        }
+                    )
+                payload = {"digitalizaciones": listado}
+                enviados += len(listado)
+                if probar:
+                    bitacora.info(f"{bucle_str}: Se enviarían {len(listado)} a {plataforma.ruta}")
+                    continue
+
+                # Enviar a la Plataforma, si falla se deja de procesar esta ruta
+                try:
+                    respuesta = requests.post(
+                        url=plataforma.ruta,
+                        json=payload,
+                        headers={"X-Api-Key": plataforma.api_key},
+                        timeout=timeout,
+                    )
+                    respuesta.raise_for_status()
+                except requests.exceptions.ConnectionError:
+                    bitacora.error(f"{bucle_str}: No hubo respuesta al tratar de enviar")
+                    break
+                except requests.exceptions.HTTPError as error:
+                    bitacora.error(f"{bucle_str}: Error de estado: {error.response}")
+                    break
+                except requests.exceptions.RequestException:
+                    bitacora.error(f"{bucle_str}: Error desconocido al tratar de enviar")
+                    break
+                try:
+                    datos = respuesta.json()
+                except requests.exceptions.JSONDecodeError:
+                    bitacora.error(f"{bucle_str}: La respuesta no es JSON")
+                    break
+                if "success" not in datos:
+                    bitacora.error(f"{bucle_str}: La respuesta no tiene success")
+                    break
+
+                # Si el success es falso, guardar en la bitácora y pasar al siguiente paquete
+                # NOTA: Cuando no hay recibidos el success es falso
+                if datos["success"] is not True:
+                    bitacora.warning(f"{bucle_str}: Success es falso: {datos.get('message', 'Sin mensaje')}")
+                    session.add(
+                        DgtPlataformaEndpointBitacora(
+                            dgt_plataforma_endpoint_id=plataforma.dgt_plataforma_endpoint_id,
+                            payload=payload,
+                            respuesta_codigo=respuesta.status_code,
+                            respuesta_exitosa=False,
+                            respuesta_mensaje=datos.get("message", "Sin mensaje"),
+                            respuesta_datos=datos,
+                        )
+                    )
+                    session.commit()
+                    continue
+
+                # Acumular los totales de la respuesta
+                if datos.get("totalRecibidos"):
+                    bitacora.info(f"{bucle_str}: Total recibidos: {datos['totalRecibidos']}")
+                    try:
+                        recibidos += int(datos["totalRecibidos"])
+                    except ValueError:
+                        pass
+                if datos.get("totalInsertados"):
+                    bitacora.info(f"{bucle_str}: Total insertados: {datos['totalInsertados']}")
+                    try:
+                        insertados += int(datos["totalInsertados"])
+                    except ValueError:
+                        pass
+                if datos.get("totalOmitidos"):
+                    bitacora.info(f"{bucle_str}: Total omitidos: {datos['totalOmitidos']}")
+                    try:
+                        omitidos += int(datos["totalOmitidos"])
+                    except ValueError:
+                        pass
+
+                # Juntar los expedientes omitidos, ejemplo: "Expediente no encontrado: SLT-J2-MER 456/2024"
+                expedientes_omitidos = set()
+                for error in datos.get("errores") or []:
+                    if error.startswith("Expediente no encontrado:"):
+                        expediente_omitido = re.search(r"\d+/\d+", error)
+                        if expediente_omitido:
+                            expedientes_omitidos.add(expediente_omitido.group())
+                    else:
+                        bitacora.error(f"{bucle_str}: Error al enviar: {error}")
+
+                # Guardar en la bitácora los resultados de este paquete
+                session.add(
+                    DgtPlataformaEndpointBitacora(
+                        dgt_plataforma_endpoint_id=plataforma.dgt_plataforma_endpoint_id,
+                        payload=payload,
+                        respuesta_codigo=respuesta.status_code,
+                        respuesta_exitosa=True,
+                        respuesta_mensaje=datos.get("message", "Sin mensaje"),
+                        respuesta_datos=datos,
+                    )
+                )
+
+                # Actualizar entregado con el tiempo actual, los omitidos quedan pendientes para el futuro
+                ahora = datetime.now(tz=tz)
+                for item in paquete:
+                    if item.expediente in expedientes_omitidos:
+                        bitacora.warning(f"{bucle_str}: Expediente omitido: {item.expediente}")
+                    else:
+                        item.entregado = ahora
+
+                # Guardar por cada paquete para que la Plataforma y la base de datos no se desincronicen
+                session.commit()
+
+    # Mostrar los contadores
+    prueba = "[yellow](PRUEBA)[/yellow] " if probar else ""
+    prueba_log = "(PRUEBA) " if probar else ""
+    bitacora.info(f"{prueba_log}Enviados: {enviados}, Recibidos: {recibidos}, Insertados: {insertados}, Omitidos: {omitidos}")
+    console.print(
+        f"{prueba}Enviados: [cyan]{enviados}[/cyan], Recibidos: [green]{recibidos}[/green], "
+        f"Insertados: [green]{insertados}[/green], Omitidos: [yellow]{omitidos}[/yellow]"
+    )
+
+
+@app.command()
+def entregar(
+    dgt_deposito_clave: str | None = None,
+    dgt_ruta_clave: str | None = None,
+    probar: Annotated[bool, Option("--probar", "-p", help="Probar sin enviar ni guardar en la base de datos")] = False,
+):
+    """Entregar las digitalizaciones a la Plataforma de cada autoridad
+
+    Si proporciona la clave del depósito, se procesan todas las rutas (no eliminadas) del mismo.
+    Si proporciona la clave de la ruta, se procesa sólo esa ruta.
+    Si ninguna de las anteriores se da, se procesan todas las rutas (no eliminadas) de los depósitos.
+    Siempre procesa depósitos con propósito DIGITALIZACIONES.
+    """
+    console = Console()
+
+    # Bitácora en un archivo log
+    settings = get_settings()
+    tz = pytz.timezone(settings.TZ)
+    ahora = datetime.now(tz=tz)
+    archivo_log = f"logs/dgt-digitalizaciones-{ahora.strftime('%Y-%m-%d-%H%M%S')}-entregar.log"
+    bitacora = logging.getLogger(__name__)
+    bitacora.setLevel(logging.INFO)
+    formato = logging.Formatter("%(asctime)s:%(levelname)s:%(message)s")
+    empunadura = logging.FileHandler(archivo_log)
+    empunadura.setFormatter(formato)
+    bitacora.addHandler(empunadura)
+
+    # Cláusulas where
+    where_clauses = [DgtRuta.estatus == "A", DgtDeposito.estatus == "A", DgtDeposito.proposito == PROPOSITO]
+    if dgt_ruta_clave and (dgt_ruta_clave := safe_clave(dgt_ruta_clave, max_len=64)):
+        where_clauses.append(DgtRuta.clave == dgt_ruta_clave)
+    elif dgt_deposito_clave and (dgt_deposito_clave := safe_clave(dgt_deposito_clave, max_len=64)):
+        where_clauses.append(DgtDeposito.clave == dgt_deposito_clave)
+
+    # Consultar las rutas
+    stmt = (
+        select(DgtRuta.id)
+        .select_from(DgtRuta)
+        .join(DgtDeposito, DgtRuta.dgt_deposito_id == DgtDeposito.id)
+        .where(*where_clauses)
+        .order_by(DgtRuta.clave)
+    )
+    with session_scope() as session:
+        dgt_rutas_ids = session.execute(stmt).scalars().all()
+    if not dgt_rutas_ids:
+        raise MyNotValidParamError(f"No hay rutas activas en depósitos con propósito {PROPOSITO} con esos parámetros")
+
+    # Procesar cada ruta, cada paquete enviado se guarda en su propia transacción
+    for dgt_ruta_id in dgt_rutas_ids:
+        _entregar_dgt_ruta(console, bitacora, dgt_ruta_id, settings.LIMIT, settings.TIMEOUT, tz, probar)
