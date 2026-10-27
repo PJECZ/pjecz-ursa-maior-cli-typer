@@ -63,7 +63,6 @@ then
     echo "   DB_NAME: ${DB_NAME}"
     echo "   DB_USER: ${DB_USER}"
     echo "   DB_PASS: ${DB_PASS}"
-    echo "   GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS}"
     echo "   SALT: ${SALT}"
     echo "   SQLALCHEMY_DATABASE_URI: ${SQLALCHEMY_DATABASE_URI}"
     echo "   TZ: ${TZ}"
@@ -78,7 +77,7 @@ then
     export PYTHONPATH=$(pwd)
     echo "   PYTHONPATH: ${PYTHONPATH}"
     echo
-    alias cli="uv run ${PWD}/pjecz_ursa_maior_cli_typer/app.py"
+    alias cli="uv run ${PWD}/src/pjecz_ursa_maior_cli_typer/main.py"
     echo "-- Ejecutar el CLI"
     echo "   cli --help"
     echo
