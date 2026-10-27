@@ -77,7 +77,7 @@ then
     export PYTHONPATH=$(pwd)
     echo "   PYTHONPATH: ${PYTHONPATH}"
     echo
-    alias cli="uv run ${PWD}/src/pjecz_ursa_maior_cli_typer/main.py"
+    alias cli="uv run pjecz-ursa-maior-cli-typer"
     echo "-- Ejecutar el CLI"
     echo "   cli --help"
     echo

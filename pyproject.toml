@@ -32,7 +32,7 @@ dev = [
 ]
 
 [project.scripts]
-pjecz-ursa-maior-cli-typer = "pjecz_ursa_maior_cli_typer:main"
+pjecz-ursa-maior-cli-typer = "pjecz_ursa_maior_cli_typer.main:main"
 
 [build-system]
 requires = ["uv_build>=0.12.24,<0.13.0"]
