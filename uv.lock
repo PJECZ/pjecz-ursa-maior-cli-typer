@@ -593,7 +593,7 @@ wheels = [
 
 [[package]]
 name = "pjecz-ursa-maior-cli-typer"
-version = "1.2.0"
+version = "1.2.1"
 source = { editable = "." }
 dependencies = [
     { name = "google-auth" },

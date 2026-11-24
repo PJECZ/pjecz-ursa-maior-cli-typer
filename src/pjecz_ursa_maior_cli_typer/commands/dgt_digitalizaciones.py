@@ -36,6 +36,7 @@ from pjecz_ursa_maior_cli_typer.models.dgt_plataformas_endpoints_bitacoras impor
 from pjecz_ursa_maior_cli_typer.models.dgt_rutas import DgtRuta
 
 PROPOSITO = "DIGITALIZACIONES"  # Sólo se procesan los depósitos con este propósito
+PAYLOAD_BITACORA_MAX = 8  # Máximo de digitalizaciones del payload que se guardan en DgtPlataformaEndpointBitacora
 
 app = Typer(help="DGT Digitalizaciones comandos")
 
@@ -455,6 +456,7 @@ def _entregar_dgt_ruta(
                         }
                     )
                 payload = {"digitalizaciones": listado}
+                payload_truncado = {"digitalizaciones": listado[:PAYLOAD_BITACORA_MAX]}  # Para no crecer la base de datos
                 enviados += len(listado)
                 if probar:
                     bitacora.info(f"{bucle_str}: Se enviarían {len(listado)} a {plataforma.ruta}")
@@ -494,7 +496,7 @@ def _entregar_dgt_ruta(
                     session.add(
                         DgtPlataformaEndpointBitacora(
                             dgt_plataforma_endpoint_id=plataforma.dgt_plataforma_endpoint_id,
-                            payload=payload,
+                            payload=payload_truncado,
                             respuesta_codigo=respuesta.status_code,
                             respuesta_exitosa=False,
                             respuesta_mensaje=datos.get("message", "Sin mensaje"),
@@ -538,7 +540,7 @@ def _entregar_dgt_ruta(
                 session.add(
                     DgtPlataformaEndpointBitacora(
                         dgt_plataforma_endpoint_id=plataforma.dgt_plataforma_endpoint_id,
-                        payload=payload,
+                        payload=payload_truncado,
                         respuesta_codigo=respuesta.status_code,
                         respuesta_exitosa=True,
                         respuesta_mensaje=datos.get("message", "Sin mensaje"),

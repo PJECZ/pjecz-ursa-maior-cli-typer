@@ -14,6 +14,7 @@ from pjecz_ursa_maior_cli_typer.commands.dgt_entregas import app as dgt_entregas
 from pjecz_ursa_maior_cli_typer.commands.dgt_plataformas import app as dgt_plataformas_app
 from pjecz_ursa_maior_cli_typer.commands.dgt_plataformas_autoridades import app as dgt_plataformas_autoridades_app
 from pjecz_ursa_maior_cli_typer.commands.dgt_plataformas_endpoints import app as dgt_plataformas_endpoints_app
+from pjecz_ursa_maior_cli_typer.commands.dgt_plataformas_endpoints_bitacoras import app as dgt_plataformas_endpoints_bitacoras_app
 from pjecz_ursa_maior_cli_typer.commands.dgt_rutas import app as dgt_rutas_app
 from pjecz_ursa_maior_cli_typer.commands.dgt_tipos import app as dgt_tipos_app
 from pjecz_ursa_maior_cli_typer.commands.distritos import app as distritos_app
@@ -28,6 +29,7 @@ app.add_typer(dgt_entregas_app, name="dgt-entregas")
 app.add_typer(dgt_plataformas_app, name="dgt-plataformas")
 app.add_typer(dgt_plataformas_autoridades_app, name="dgt-plataformas-autoridades")
 app.add_typer(dgt_plataformas_endpoints_app, name="dgt-plataformas-endpoints")
+app.add_typer(dgt_plataformas_endpoints_bitacoras_app, name="dgt-plataformas-endpoints-bitacoras")
 app.add_typer(dgt_rutas_app, name="dgt-rutas")
 app.add_typer(dgt_tipos_app, name="dgt-tipos")
 app.add_typer(distritos_app, name="distritos")
