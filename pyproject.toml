@@ -1,6 +1,6 @@
 [project]
 name = "pjecz-ursa-maior-cli-typer"
-version = "1.2.0"
+version = "1.2.1"
 description = "CLI hecho con Typer para administrar las digitalizaciones."
 readme = "README.md"
 authors = [
@@ -47,6 +47,8 @@ line_length = 128
 profile = "black"
 
 [tool.basedpyright]
+venvPath = "."
+venv = ".venv"
 pythonVersion = "3.14"
 typeCheckingMode = "basic"
 reportCallIssue = "hint"
@@ -55,5 +57,7 @@ reportUndefinedVariable = "warning"
 exclude = ["**/tests"]
 
 [tool.ruff]
-ignore = ["F821", "RUF012"]
 line-length = 128
+
+[tool.ruff.lint]
+ignore = ["F821", "RUF012", "UP037"]
